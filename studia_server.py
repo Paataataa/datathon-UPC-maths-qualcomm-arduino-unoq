@@ -641,8 +641,9 @@ class App:
             self.db.equip(self.student_id, slot, item_id)
         except ValueError as error:
             raise ApiError(403, str(error)) from None
-        if slot == "avatar":
-            notify_hardware("avatar", ITEMS[item_id]["led"] if item_id else "smile")
+        # Equipe lo que equipe, la matriz enseña enseguida el avatar (con lo nuevo puesto)
+        avatar = self.db.get_equipped(self.student_id).get("avatar")
+        notify_hardware("avatar", ITEMS[avatar]["led"] if avatar in ITEMS else "smile")
         return self.shop()
 
     def gacha(self):

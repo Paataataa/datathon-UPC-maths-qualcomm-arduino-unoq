@@ -78,7 +78,7 @@ BORDER = ([(0, x) for x in range(6, COLS)] + [(y, COLS - 1) for y in range(1, RO
 ORBIT = [(round(3.5 - 3 * math.cos(2 * math.pi * k / 12)), round(6 + 4 * math.sin(2 * math.pi * k / 12)))
          for k in range(12)]
 EVENTS = ("correct", "wrong", "thinking", "pomodoro", "gacha", "avatar", "dyscalculia")
-DURATION = {"correct": 2.0, "wrong": 2.0, "gacha": 5.7, "pomo_end": 4.0}
+DURATION = {"correct": 2.0, "wrong": 2.0, "gacha": 5.7, "pomo_end": 4.0, "avatar_show": 3.0}
 MAX_QUEUE = 4          # si llegan muchos eventos seguidos, los más antiguos se descartan
 STANDBY = (("dance_avatar", 6.0), ("title", None), ("dancer", 6.0), ("wiggle", 5.0),
            ("saber", 6.2), ("stars", 4.0))
@@ -144,7 +144,10 @@ class Matrix:
             rng = random.Random(now)
             self._enqueue({"name": "gacha", "reel": [rng.choice(pool) for _ in range(12)] + [won]})
         elif event == "avatar":
+            # Al equipar algo, el avatar sale enseguida (y la espera empieza por él)
             self.idle = arg if arg in ICONS else "smile"
+            self.queue = deque(a for a in self.queue if a["name"] != "avatar_show")
+            self._enqueue({"name": "avatar_show"})
         elif event == "pomodoro":
             parts = arg.split("-")
             if parts[0] in ("start", "pause") and len(parts) == 3 and parts[1].isdigit() and parts[2].isdigit():
@@ -256,7 +259,17 @@ class Matrix:
         t = now - a["start"]
         grid = blank()
         if a["name"] in DURATION and t > DURATION[a["name"]]:
+            if a["name"] == "avatar_show":
+                self.standby_start = None  # la espera vuelve a empezar por el avatar bailando
             return None
+        if a["name"] == "avatar_show":
+            top = min(0, round(-8 + 8 * t / 0.4))  # baja desde arriba en 0,4 s
+            stamp(grid, ICONS[self.idle], top, 2)
+            if t > 0.4:  # destellos a los lados, 1 vez por segundo
+                side = ((1, 0), (6, 12)) if int(t * 2) % 2 else ((1, 12), (6, 0))
+                for y, x in side:
+                    grid[y][x] = ON
+            return grid
         if a["name"] == "correct":
             for y, x in TICK[:max(1, math.ceil(len(TICK) * min(1.0, t / 0.5)))]:
                 grid[y][x] = ON
