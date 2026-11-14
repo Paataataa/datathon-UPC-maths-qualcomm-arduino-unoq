@@ -242,7 +242,7 @@ class DBManager:
             ) from exc
 
     def find_similar_easier(self, problem_id, language="cat", strictly_easier=False,
-                            use_server=False):
+                            use_server=False, exact_level=None):
         """Pista 2: busca por la versión inglesa, excluyendo el mismo ID.
 
         use_server=False: emplea el vector almacenado si el problema está en
@@ -257,7 +257,9 @@ class DBManager:
         if source is None:
             raise ValueError(f"No encuentro el problema {problem_id} en inglés")
         vec = self._query_vector(source, use_server)
-        return self._search(vec, source["level"], language, problem_id, strictly_easier)
+        # exact_level: solo problemas de ese nivel (p. ej. uno por debajo, no cualquiera inferior)
+        return self._search(vec, source["level"], language, problem_id, strictly_easier,
+                            exact_level=exact_level)
 
     def find_similar_from_vector(self, query_vector, max_level, language="cat", exclude_id=None):
         """Para un ejercicio nuevo: el vector deberá provenir después del servidor 8082."""

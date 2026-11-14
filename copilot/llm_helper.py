@@ -332,11 +332,17 @@ def _safe_fallback(problem):
 
 
 def _tidy(text, max_words):
-    """Primera línea, sin comillas, recortada a max_words."""
+    """Primera línea, sin comillas. Nunca deja una frase a medias con "…": si el modelo
+    se pasó de largo (más del doble de max_words, o lo cortó max_tokens), se recorta
+    hasta el último final de frase."""
     text = (text or "").strip().split("\n")[0].strip().strip('"“”«» ')
     words = text.split()
-    if len(words) > max_words:
-        text = " ".join(words[:max_words]).rstrip(",;:") + "…"
+    if len(words) > 2 * max_words:
+        text = " ".join(words[:2 * max_words])
+    if text and not re.search(r"[.!?]$", text):
+        ends = [m.end() for m in re.finditer(r"[.!?](?=\s|$)", text)]
+        if ends and ends[-1] > 0.4 * len(text):
+            text = text[:ends[-1]]
     return text
 
 
@@ -432,8 +438,8 @@ def get_socratic_hint(problem_dict, student_question=None, timeout=30.0, cancel=
         if _is_injection(q):  # ni siquiera llamamos al modelo: ahorra 10 s y cierra la puerta
             return _respond(problem_dict, None, 0, 0, timeout, block_reason="injection",
                             skip_llm=True)
-        return _respond(problem_dict, _task_question(problem_dict, q), 40, 25, timeout, cancel=cancel)
-    return _respond(problem_dict, _task_hint(problem_dict), 40, 18, timeout, cancel=cancel)
+        return _respond(problem_dict, _task_question(problem_dict, q), 70, 25, timeout, cancel=cancel)
+    return _respond(problem_dict, _task_hint(problem_dict), 70, 18, timeout, cancel=cancel)
 
 
 def explain_wrong_answer(problem_dict, chosen_letter, timeout=30.0, cancel=None):
@@ -446,7 +452,7 @@ def explain_wrong_answer(problem_dict, chosen_letter, timeout=30.0, cancel=None)
                    block_reason=None, status="correct_choice")
         return out
     value = _norm((problem_dict.get("options") or {}).get(chosen_letter, ""))
-    return _respond(problem_dict, _task_wrong(problem_dict, chosen_letter, value), 40, 20, timeout,
+    return _respond(problem_dict, _task_wrong(problem_dict, chosen_letter, value), 70, 20, timeout,
                     cancel=cancel)
 
 

@@ -40,7 +40,7 @@ from copilot.config import CONFIG  # noqa: E402
 from db_manager import DBManager, MAX_LEVEL, VECTOR_DIM  # noqa: E402
 
 STATIC = os.path.join(ROOT, "static")
-LANGS = ("cat", "esp", "eng")
+LANGS = ("cat", "eng")  # los idiomas que prepara el README (paso 9: --languages eng,cat)
 MODES = ("practice", "test")
 
 # Monedas. Práctica: una vez por problema acertado. Test: solo al acabarlo, en proporción a
@@ -131,6 +131,7 @@ class Precompute:
         self.running = None   # (clave, función, Cancel) en curso
         self.current = None   # (id, idioma) del problema actual
         self.held = 0         # llamadas directas del alumno en curso: la cola espera
+        self.direct_calls = []  # [(id, idioma), Cancel] de esas llamadas directas
         threading.Thread(target=self._worker, name="precompute", daemon=True).start()
 
     def _cut_running(self, unless=None):
@@ -138,17 +139,21 @@ class Precompute:
         if self.running and self.running[0] != unless:
             self.running[2].cancel()
 
-    def direct(self, compute):
+    def direct(self, base, compute):
         """Llamada directa al LLM (una duda libre, o algo que no estaba en la cola).
-        Corta la tarea de fondo y la cola no empieza otra hasta que acaba: el alumno va primero."""
+        Corta la tarea de fondo y la cola no empieza otra hasta que acaba: el alumno va primero.
+        compute(cancel) recibe un Cancel: si el alumno cambia de problema, se corta."""
+        cancel = llm_helper.Cancel()
         with self.cv:
             self.held += 1
             self._cut_running()
+            self.direct_calls.append((base, cancel))
         try:
-            return compute()
+            return compute(cancel)
         finally:
             with self.cv:
                 self.held -= 1
+                self.direct_calls = [(b, c) for b, c in self.direct_calls if c is not cancel]
                 self.cv.notify_all()
 
     def start_problem(self, problem):
@@ -162,6 +167,9 @@ class Precompute:
             self.current = base
             if self.running and self.running[0][:2] != base:
                 self.running[2].cancel()  # el problema anterior ya no interesa
+            for b, cancel in self.direct_calls:
+                if b != base:
+                    cancel.cancel()  # tampoco lo que el alumno pidió de él
             self.results = {k: v for k, v in self.results.items() if k[:2] == base}
             busy = self.running[0] if self.running else None
             self.jobs = [(k, fn) for k, fn in jobs if k not in self.results and k != busy]
@@ -169,7 +177,8 @@ class Precompute:
 
     def get(self, key, compute, timeout=60):
         """Devuelve (resultado, precalculado). Si está en cola lo adelanta, corta lo que
-        se esté calculando y lo espera; si no está en la cola, lo calcula aquí."""
+        se esté calculando y lo espera; si no está en la cola, lo calcula aquí (compute(cancel)).
+        Devuelve (None, False) si mientras tanto el alumno ha cambiado de problema."""
         deadline = time.monotonic() + timeout
         with self.cv:
             if key in self.results:
@@ -188,7 +197,9 @@ class Precompute:
                 self.cv.wait(left)
             if key in self.results:
                 return self.results[key], True
-        return self.direct(compute), False
+            if key[:2] != self.current:
+                return None, False
+        return self.direct(key[:2], compute), False
 
     def _worker(self):
         while True:
@@ -420,14 +431,21 @@ class App:
             notify_hardware("thinking", "start")
             try:
                 if question:
-                    return self.pre.direct(
-                        lambda: llm_helper.get_socratic_hint(problem, student_question=question)), False
+                    return self.pre.direct((problem["id"], problem["language"]), lambda c: llm_helper.get_socratic_hint(
+                        problem, student_question=question, cancel=c)), False
                 key = (problem["id"], problem["language"], "hint")
-                return self.pre.get(key, lambda: llm_helper.get_socratic_hint(problem))
+                return self.pre.get(key, lambda c: llm_helper.get_socratic_hint(problem, cancel=c))
             finally:
                 notify_hardware("thinking", "stop")
 
         result, pre = self._ai_call(run)
+        return self._answer(result, pre, started)
+
+    @staticmethod
+    def _answer(result, pre, started):
+        if result is None or result.get("status") == "cancelled":
+            # El alumno cambió de problema mientras la IA pensaba: esta respuesta ya no sirve.
+            raise ApiError(409, "has cambiado de problema")
         return llm_view(result, pre, time.perf_counter() - started)
 
     def explain(self, body):
@@ -441,8 +459,8 @@ class App:
         started = time.perf_counter()
         key = (problem["id"], problem["language"], "wrong", choice)
         result, pre = self._ai_call(
-            lambda: self.pre.get(key, lambda: llm_helper.explain_wrong_answer(problem, choice)))
-        return llm_view(result, pre, time.perf_counter() - started)
+            lambda: self.pre.get(key, lambda c: llm_helper.explain_wrong_answer(problem, choice, cancel=c)))
+        return self._answer(result, pre, started)
 
     def similar(self, query):
         if clean_mode(query.get("mode")) == "test":
@@ -450,10 +468,16 @@ class App:
         problem_id = clean_id(query.get("problem_id"))
         language = clean_language(query.get("language"))
         started = time.perf_counter()
+        source = self.db.get_problem(problem_id, language)
+        if source is None:
+            raise ApiError(404, "problema desconocido")
+        level = source["level"]
         try:
-            # Primero uno más fácil; si no lo hay (nivel 0) vale uno del mismo nivel.
-            found = (self.db.find_similar_easier(problem_id, language=language, strictly_easier=True)
-                     or self.db.find_similar_easier(problem_id, language=language))
+            # Primero uno de un curso por debajo (solo uno: no de cursos mucho más fáciles);
+            # si no lo hay (o es el primer curso), uno del mismo curso.
+            found = ((level > 0 and self.db.find_similar_easier(problem_id, language=language,
+                                                                exact_level=level - 1))
+                     or self.db.find_similar_easier(problem_id, language=language, exact_level=level))
         except ValueError as error:
             raise ApiError(404, str(error)) from None
         except (ConnectionError, RuntimeError, FileNotFoundError) as error:
