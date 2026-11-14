@@ -4,7 +4,9 @@ source "$(dirname "$0")/common.sh"
 
 short="${LLAMA_CPP_REF:0:7}"
 
-if [ -x "$LLAMA_SERVER" ] && "$LLAMA_SERVER" --version 2>&1 | grep -q "$short"; then
+version_out=""
+[ -x "$LLAMA_SERVER" ] && version_out="$("$LLAMA_SERVER" --version 2>&1 || true)"
+if grep -q "$short" <<<"$version_out"; then
   ok "llama-server is already built at commit $short. Nothing to do."
   exit 0
 fi
@@ -27,5 +29,6 @@ start=$(date +%s)
 cmake --build "$LLAMA_CPP_DIR/build" --config Release -j4 --target llama-server llama-cli
 ok "built in $(( ($(date +%s) - start) / 60 )) minutes"
 
-"$LLAMA_SERVER" --version 2>&1 | grep -m1 version
+version_out="$("$LLAMA_SERVER" --version 2>&1 || true)"
+grep -m1 version <<<"$version_out" || true
 ok "Next: ./board/03_download_models.sh"

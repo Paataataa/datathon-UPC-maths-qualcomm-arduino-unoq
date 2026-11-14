@@ -16,8 +16,10 @@ for port in "$LLM_PORT" "$EMBED_PORT"; do
   fi
 done
 
+USER_NAME="$(id -un)"
+
 render() {
-  sed -e "s|@USER@|$USER|g" \
+  sed -e "s|@USER@|$USER_NAME|g" \
       -e "s|@LLAMA_SERVER@|$LLAMA_SERVER|g" \
       -e "s|@LLM_PATH@|$LLM_PATH|g" -e "s|@LLM_PORT@|$LLM_PORT|g" \
       -e "s|@LLM_THREADS@|$LLM_THREADS|g" -e "s|@LLM_CTX@|$LLM_CTX|g" -e "s|@LLM_ALIAS@|$LLM_ALIAS|g" \

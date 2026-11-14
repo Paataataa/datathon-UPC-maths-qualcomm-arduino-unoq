@@ -229,7 +229,8 @@ def _safe_fallback(problem):
     label = problem.get("label")
     correct = _norm((problem.get("options") or {}).get(label, "")) if label else ""
     nums = []
-    for n in re.findall(r"\d+(?:[.,]\d+)?", problem.get("text", "")):
+    statement = re.sub(r"^\s*\d+\.\s+", "", problem.get("text", ""))  # sin el número del problema
+    for n in re.findall(r"\d+(?:[.,]\d+)?", statement):
         if n != correct and n not in nums:
             nums.append(n)
     with_nums, generic = _FALLBACK[lang]

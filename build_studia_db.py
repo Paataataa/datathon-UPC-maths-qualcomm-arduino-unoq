@@ -149,7 +149,7 @@ def process_file(filepath, cursor, split, counts):
             cursor.execute('''
                 INSERT INTO problems (id, language, split, level, year, original_text, options, label, topic, text_dyslexia, text_tdah)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (p["id"], lang, split, p["level"], p["year"], p["text"], options_json, p.get("label", ""), topic, text_dyslexia, text_tdah))
+            ''', (p["id"], lang, split, p["level"], p.get("year"), p["text"], options_json, p.get("label", ""), topic, text_dyslexia, text_tdah))
             counts[(split, lang, topic)] += 1
 
 def main():
