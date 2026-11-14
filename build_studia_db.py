@@ -2,53 +2,70 @@
 import json
 import sqlite3
 import os
+import re
 
 DB_PATH = 'data/studia.db'
 TRAIN_PATH = 'data/train.jsonl'
 VAL_PATH = 'data/val.jsonl'
 
-# Fichas estáticas de teoría para inyectar en SQLite
+# 3. Teoría trilingüe
 THEORY = {
-    "Geometría": "Recuerda las fórmulas básicas: Área del triángulo = (b*h)/2. Suma de ángulos = 180º. Dibuja siempre la figura si no te la dan.",
-    "Combinatoria": "Para contar combinaciones, usa el principio multiplicativo. Si tienes dudas, intenta listar los primeros casos a mano.",
-    "Lógica": "Lee despacio. Si hay contradicciones, asume que una afirmación es falsa y comprueba si el resto tiene sentido.",
-    "Aritmética": "Calcula paso a paso. Recuerda la prioridad de operaciones: primero paréntesis, luego multiplicación/división, y al final suma/resta.",
-    "Patrones": "Busca la diferencia entre números consecutivos. Si no es constante, busca multiplicaciones o números alternos."
+    "esp": {
+        "Geometría": "Recuerda las fórmulas básicas: Área del triángulo = (b*h)/2. Suma de ángulos = 180º. Dibuja siempre la figura si no te la dan.",
+        "Combinatoria": "Para contar combinaciones, usa el principio multiplicativo. Si tienes dudas, intenta listar los primeros casos a mano.",
+        "Lógica": "Lee despacio. Si hay contradicciones, asume que una afirmación es falsa y comprueba si el resto tiene sentido.",
+        "Aritmética": "Calcula paso a paso. Recuerda la prioridad de operaciones: primero paréntesis, luego multiplicación/división, y al final suma/resta.",
+        "Patrones": "Busca la diferencia entre números consecutivos. Si no es constante, busca multiplicaciones o números alternos."
+    },
+    "eng": {
+        "Geometría": "Remember basic formulas: Triangle area = (b*h)/2. Sum of angles = 180º. Always draw the figure if not provided.",
+        "Combinatoria": "To count combinations, use the multiplicative principle. If in doubt, try listing the first cases by hand.",
+        "Lógica": "Read slowly. If there are contradictions, assume one statement is false and check if the rest makes sense.",
+        "Aritmética": "Calculate step by step. Remember the order of operations: parentheses first, then multiplication/division, and finally addition/subtraction.",
+        "Patrones": "Look for the difference between consecutive numbers. If it's not constant, look for multiplications or alternating numbers."
+    },
+    "cat": {
+        "Geometría": "Recorda les fórmules bàsiques: Àrea del triangle = (b*h)/2. Suma d'angles = 180º. Dibuixa sempre la figura si no te la donen.",
+        "Combinatoria": "Per comptar combinacions, utilitza el principi multiplicatiu. Si tens dubtes, intenta llistar els primers casos a mà.",
+        "Lógica": "Llegeix a poc a poc. Si hi ha contradiccions, assumeix que una afirmació és falsa i comprova si la resta té sentit.",
+        "Aritmética": "Calcula pas a pas. Recorda la prioritat d'operacions: primer parèntesis, després multiplicació/divisió, i al final suma/resta.",
+        "Patrones": "Busca la diferència entre nombres consecutius. Si no és constant, busca multiplicacions o nombres alterns."
+    }
+}
+
+# 1 y 2. Clasificador por Regex (\b) incluyendo catalán
+KEYWORDS = {
+    "Geometría": re.compile(r'\b(triángul[oa]s?|área|ángulos?|círculos?|cuadrados?|cm|triangles?|area|angles?|squares?|circles?|cercles?|quadrats?)\b', re.IGNORECASE),
+    "Combinatoria": re.compile(r'\b(maneras|combinaciones|monedas|dados?|ways|combinations|coins|dice|maneres|daus?|monedes)\b', re.IGNORECASE),
+    "Lógica": re.compile(r'\b(verdad|mentira|siempre|lógica|true|false|always|logic|veritat|mentida|sempre|lògica)\b', re.IGNORECASE),
+    "Patrones": re.compile(r'\b(secuencia|patrón|siguiente|sequence|pattern|next|seqüència|patró|següent)\b', re.IGNORECASE)
 }
 
 def classify_topic(text):
-    text_lower = text.lower()
-    if any(w in text_lower for w in ["triángulo", "área", "ángulo", "triangle", "area", "angle", "cm", "círculo", "cuadrado", "square"]):
-        return "Geometría"
-    elif any(w in text_lower for w in ["maneras", "combinaciones", "monedas", "ways", "combinations", "coins", "dados", "dice"]):
-        return "Combinatoria"
-    elif any(w in text_lower for w in ["verdad", "mentira", "siempre", "true", "false", "always", "lógica", "logic"]):
-        return "Lógica"
-    elif any(w in text_lower for w in ["secuencia", "patrón", "siguiente", "sequence", "pattern", "next"]):
-        return "Patrones"
-    else:
-        return "Aritmética"
+    for topic, pattern in KEYWORDS.items():
+        if pattern.search(text):
+            return topic
+    return "Aritmética"
+
+# 4. Solución al parseo de TDAH y Dislexia
+def clean_and_split(text):
+    # Eliminar numeración inicial tipo "13. " o "1. "
+    text = re.sub(r'^\d+\.\s+', '', text)
+    # Separar por puntuación final manteniendo el signo (?.!)
+    return [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
 
 def format_dyslexia(text):
-    # Una idea por línea, pregunta aislada al final
-    sentences = [s.strip() for s in text.split('. ') if s.strip()]
+    sentences = clean_and_split(text)
     if not sentences: return text
-    formatted = ".\n\n".join(sentences[:-1])
-    if len(sentences) > 1:
-        formatted += ".\n\n" + sentences[-1]
-    else:
-        formatted = sentences[0]
-    return formatted
+    return "\n\n".join(sentences)
 
 def format_tdah(text):
-    # Enunciado troceado en pasos
-    sentences = [s.strip() for s in text.split('. ') if s.strip()]
+    sentences = clean_and_split(text)
     if not sentences: return text
-    steps = "\n".join([f"Paso {i+1}: {s}." for i, s in enumerate(sentences[:-1])])
-    if len(sentences) > 1:
-        steps += f"\n\nObjetivo final: {sentences[-1]}"
-    else:
-        steps = sentences[0]
+    if len(sentences) == 1:
+        return sentences[0]
+    steps = "\n".join([f"Paso {i+1}: {s}" for i, s in enumerate(sentences[:-1])])
+    steps += f"\n\nObjetivo final: {sentences[-1]}"
     return steps
 
 def process_file(filepath, cursor):
@@ -60,6 +77,8 @@ def process_file(filepath, cursor):
             if not line.strip(): continue
             p = json.loads(line)
             
+            lang = p.get("language", "esp")
+            # Normalizar esp a spa si hiciera falta, M3Kang usa eng, cat, esp
             topic = classify_topic(p.get("text", ""))
             text_dyslexia = format_dyslexia(p.get("text", ""))
             text_tdah = format_tdah(p.get("text", ""))
@@ -68,7 +87,7 @@ def process_file(filepath, cursor):
             cursor.execute('''
                 INSERT INTO problems (id, language, level, year, original_text, options, label, topic, text_dyslexia, text_tdah)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (p["id"], p["language"], p["level"], p["year"], p["text"], options_json, p.get("label", ""), topic, text_dyslexia, text_tdah))
+            ''', (p["id"], lang, p["level"], p["year"], p["text"], options_json, p.get("label", ""), topic, text_dyslexia, text_tdah))
 
 def main():
     if os.path.exists(DB_PATH):
@@ -77,7 +96,6 @@ def main():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    # Crear tablas
     c.execute('''
         CREATE TABLE problems (
             id TEXT,
@@ -93,27 +111,17 @@ def main():
         )
     ''')
     
-    c.execute('CREATE TABLE theory (topic TEXT PRIMARY KEY, content TEXT)')
+    # Modificamos la clave primaria para soportar los tres idiomas
+    c.execute('CREATE TABLE theory (topic TEXT, language TEXT, content TEXT, PRIMARY KEY (topic, language))')
     
-    # Inyectar teoría
-    for topic, content in THEORY.items():
-        c.execute('INSERT INTO theory (topic, content) VALUES (?, ?)', (topic, content))
+    for lang, topics in THEORY.items():
+        for topic, content in topics.items():
+            c.execute('INSERT INTO theory (topic, language, content) VALUES (?, ?, ?)', (topic, lang, content))
         
-    # Procesar datasets
     process_file(TRAIN_PATH, c)
     process_file(VAL_PATH, c)
     
     conn.commit()
-    
-    # Comprobar resultados
-    c.execute('SELECT COUNT(*) FROM problems')
-    total = c.fetchone()[0]
-    print(f"Base de datos studia.db generada con {total} problemas.")
-    
-    c.execute('SELECT topic, COUNT(*) FROM problems GROUP BY topic')
-    for row in c.fetchall():
-        print(f" - {row[0]}: {row[1]} problemas")
-        
     conn.close()
 
 if __name__ == '__main__':
