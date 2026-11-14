@@ -119,32 +119,57 @@ class Precompute:
     La placa tiene un solo slot de LLM: una cola con un único hilo. Primero la pista,
     después la explicación de cada opción incorrecta (el servidor conoce la respuesta;
     el navegador no). Al cargar otro problema se descarta lo pendiente del anterior.
+
+    El alumno va siempre primero: si pide algo que no es lo que la cola está calculando,
+    la tarea en curso se corta (llm_helper.Cancel) y vuelve a la cola para más tarde.
     """
 
     def __init__(self):
         self.cv = threading.Condition()
-        self.jobs = []        # [(clave, función)]; la primera es la siguiente
+        self.jobs = []        # [(clave, función(cancel))]; la primera es la siguiente
         self.results = {}     # clave -> resultado de llm_helper
-        self.running = None   # clave en curso
+        self.running = None   # (clave, función, Cancel) en curso
         self.current = None   # (id, idioma) del problema actual
+        self.held = 0         # llamadas directas del alumno en curso: la cola espera
         threading.Thread(target=self._worker, name="precompute", daemon=True).start()
+
+    def _cut_running(self, unless=None):
+        """Corta la tarea de fondo en curso (salvo que sea `unless`). Con self.cv cogido."""
+        if self.running and self.running[0] != unless:
+            self.running[2].cancel()
+
+    def direct(self, compute):
+        """Llamada directa al LLM (una duda libre, o algo que no estaba en la cola).
+        Corta la tarea de fondo y la cola no empieza otra hasta que acaba: el alumno va primero."""
+        with self.cv:
+            self.held += 1
+            self._cut_running()
+        try:
+            return compute()
+        finally:
+            with self.cv:
+                self.held -= 1
+                self.cv.notify_all()
 
     def start_problem(self, problem):
         base = (problem["id"], problem["language"])
-        jobs = [(base + ("hint",), lambda: llm_helper.get_socratic_hint(problem))]
+        jobs = [(base + ("hint",), lambda c: llm_helper.get_socratic_hint(problem, cancel=c))]
         for letter in sorted(problem["options"]):
             if letter != problem["label"]:
                 jobs.append((base + ("wrong", letter),
-                             lambda l=letter: llm_helper.explain_wrong_answer(problem, l)))
+                             lambda c, l=letter: llm_helper.explain_wrong_answer(problem, l, cancel=c)))
         with self.cv:
             self.current = base
+            if self.running and self.running[0][:2] != base:
+                self.running[2].cancel()  # el problema anterior ya no interesa
             self.results = {k: v for k, v in self.results.items() if k[:2] == base}
-            self.jobs = [(k, fn) for k, fn in jobs if k not in self.results and k != self.running]
+            busy = self.running[0] if self.running else None
+            self.jobs = [(k, fn) for k, fn in jobs if k not in self.results and k != busy]
             self.cv.notify_all()
 
     def get(self, key, compute, timeout=60):
-        """Devuelve (resultado, precalculado). Si está en cola lo adelanta y lo espera;
-        si no está (o tarda demasiado), lo calcula aquí."""
+        """Devuelve (resultado, precalculado). Si está en cola lo adelanta, corta lo que
+        se esté calculando y lo espera; si no está en la cola, lo calcula aquí."""
         deadline = time.monotonic() + timeout
         with self.cv:
             if key in self.results:
@@ -152,36 +177,42 @@ class Precompute:
             for i, (k, _fn) in enumerate(self.jobs):
                 if k == key:
                     self.jobs.insert(0, self.jobs.pop(i))
+                    self._cut_running(unless=key)
                     self.cv.notify_all()
                     break
             while key not in self.results:
-                pending = self.running == key or any(k == key for k, _fn in self.jobs)
+                pending = (self.running and self.running[0] == key) or any(k == key for k, _fn in self.jobs)
                 left = deadline - time.monotonic()
                 if not pending or left <= 0:
                     break
                 self.cv.wait(left)
             if key in self.results:
                 return self.results[key], True
-        return compute(), False
+        return self.direct(compute), False
 
     def _worker(self):
         while True:
             with self.cv:
-                while not self.jobs:
+                while not self.jobs or self.held:
                     self.cv.wait()
                 key, fn = self.jobs.pop(0)
-                self.running = key
+                cancel = llm_helper.Cancel()
+                self.running = (key, fn, cancel)
             try:
-                result = fn()
+                result = fn(cancel)
             except Exception:  # noqa: BLE001
                 traceback.print_exc()
                 result = None
             with self.cv:
                 self.running = None
-                # Solo se guarda lo bueno y del problema actual: un error (modelo caído)
-                # se vuelve a intentar cuando el alumno lo pida.
-                ok = result is not None and not str(result.get("status", "")).startswith("error")
-                if ok and key[:2] == self.current:
+                status = str((result or {}).get("status", "error"))
+                if cancel.is_set() or status == "cancelled":
+                    # Cortada para atender al alumno: vuelve a la cola, detrás de lo que
+                    # él necesita (que ya estará el primero), si sigue siendo de este problema.
+                    if key[:2] == self.current and key not in self.results:
+                        self.jobs.insert(1 if self.jobs else 0, (key, fn))
+                elif result is not None and not status.startswith("error") and key[:2] == self.current:
+                    # Un error (modelo caído) no se guarda: se reintenta cuando el alumno lo pida.
                     self.results[key] = result
                 self.cv.notify_all()
 
@@ -280,7 +311,18 @@ class App:
         self.tried = {}                # (id, idioma) -> letras falladas: solo esas se explican
         self.tests = {}                # sesiones de test en curso
         self.lock = threading.Lock()   # todo lo que cambia monedas, de uno en uno
+        self.ai_lock = threading.Lock()  # una sola petición del alumno a la IA a la vez
         self.pre = Precompute()
+
+    def _ai_call(self, fn):
+        """Ejecuta fn() si no hay otra petición del alumno a la IA en curso; si la hay, 429.
+        La placa solo atiende al modelo de uno en uno: dos clics no deben encolar dos llamadas."""
+        if not self.ai_lock.acquire(blocking=False):
+            raise ApiError(429, "studIA ya está pensando: espera a que termine")
+        try:
+            return fn()
+        finally:
+            self.ai_lock.release()
 
     # -- lectura de studia.db (solo lectura, tablas theory y modes) --
     def _studia(self):
@@ -373,15 +415,19 @@ class App:
             raise ApiError(400, "question debe ser texto")
         question = (question or "").strip()[:80] or None
         started = time.perf_counter()
-        notify_hardware("thinking", "start")
-        try:
-            if question:
-                result, pre = llm_helper.get_socratic_hint(problem, student_question=question), False
-            else:
+
+        def run():
+            notify_hardware("thinking", "start")
+            try:
+                if question:
+                    return self.pre.direct(
+                        lambda: llm_helper.get_socratic_hint(problem, student_question=question)), False
                 key = (problem["id"], problem["language"], "hint")
-                result, pre = self.pre.get(key, lambda: llm_helper.get_socratic_hint(problem))
-        finally:
-            notify_hardware("thinking", "stop")
+                return self.pre.get(key, lambda: llm_helper.get_socratic_hint(problem))
+            finally:
+                notify_hardware("thinking", "stop")
+
+        result, pre = self._ai_call(run)
         return llm_view(result, pre, time.perf_counter() - started)
 
     def explain(self, body):
@@ -394,7 +440,8 @@ class App:
             raise ApiError(403, "solo se explican las opciones que ya has elegido")
         started = time.perf_counter()
         key = (problem["id"], problem["language"], "wrong", choice)
-        result, pre = self.pre.get(key, lambda: llm_helper.explain_wrong_answer(problem, choice))
+        result, pre = self._ai_call(
+            lambda: self.pre.get(key, lambda: llm_helper.explain_wrong_answer(problem, choice)))
         return llm_view(result, pre, time.perf_counter() - started)
 
     def similar(self, query):
@@ -489,6 +536,16 @@ class App:
                 session["current"] = nxt["problem"]["id"]
                 out["next"] = nxt
         return out
+
+    def test_abandon(self, body):
+        """Abandonar el test: se cierra la sesión sin monedas. Los intentos ya respondidos
+        quedan guardados en el progreso, como cualquier otro intento."""
+        with self.lock:
+            session = self.tests.get(body.get("session")) if isinstance(body.get("session"), str) else None
+            if session is None or session["done"]:
+                raise ApiError(404, "no hay ningún test en marcha con esa sesión")
+            session["done"] = True
+            return {"abandoned": True, "right": session["right"], "n": session["n"]}
 
     def _finish_test(self, session):
         """Nota = aciertos / preguntas respondidas. Monedas proporcionales a los aciertos
@@ -609,6 +666,7 @@ ROUTES = {
     ("POST", "/api/explain"): lambda app, q, b: app.explain(b),
     ("POST", "/api/check"): lambda app, q, b: app.check(b),
     ("POST", "/api/test/start"): lambda app, q, b: app.test_start(b),
+    ("POST", "/api/test/abandon"): lambda app, q, b: app.test_abandon(b),
     ("POST", "/api/buy"): lambda app, q, b: app.buy(b),
     ("POST", "/api/equip"): lambda app, q, b: app.equip(b),
     ("POST", "/api/gacha"): lambda app, q, b: app.gacha(),

@@ -77,6 +77,35 @@ h2 { margin: 0 0 12px; font-size: 1.15rem; }
 .topic[aria-pressed=true] { border-color: var(--brand); background: #eef0ff; }
 .topic .ico { font-size: 1.6rem; display: block; }
 .theory-box { background: #eef0ff; border-left: 5px solid var(--brand); border-radius: 10px; padding: 14px 16px; }
+/* Aprender: temas a la izquierda, la lección (explicada por el avatar) a la derecha */
+.learn-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr); gap: 18px; align-items: start; }
+@media (max-width: 860px) { .learn-layout { grid-template-columns: minmax(0, 1fr); } }
+.learn-layout .grid-topics { grid-template-columns: 1fr; margin: 0; }
+.learn-layout .topic { display: flex; gap: 12px; align-items: center; border-left: 6px solid var(--c, var(--brand)); padding: 12px 14px; }
+.learn-layout .topic .ico { display: grid; place-items: center; width: 2.4rem; height: 2.4rem; border-radius: 50%; background: color-mix(in srgb, var(--c, var(--brand)) 15%, white); font-size: 1.3rem; flex: none; }
+.learn-layout .topic[aria-pressed=true] { background: color-mix(in srgb, var(--c, var(--brand)) 10%, white); border-color: var(--c, var(--brand)); }
+.lesson { border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: var(--card); }
+.lesson-head { display: flex; gap: 14px; align-items: center; padding: 16px 18px; color: #fff; background: var(--c, var(--brand)); }
+.lesson-head .big { font-size: 2.2rem; line-height: 1; }
+.lesson-head h3 { margin: 0; font-size: 1.3rem; }
+.lesson-body { padding: 16px 18px; display: grid; gap: 14px; }
+.tutor { display: flex; gap: 12px; align-items: flex-start; }
+.bubble { position: relative; background: #f4f6fb; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; flex: 1; min-width: 0; }
+.bubble::before { content: ""; position: absolute; left: -8px; top: 16px; border: 8px solid transparent; border-left: none; border-right-color: var(--line); }
+.tips { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; counter-reset: tip; }
+.tips li { display: flex; gap: 10px; align-items: flex-start; }
+.tips li::before { counter-increment: tip; content: counter(tip); flex: none; display: grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--c, var(--brand)); color: #fff; font-weight: 800; font-size: .85rem; }
+.tutor .ava-frame { font-size: 1.6rem; }
+/* Guía */
+.help-btn { border: 2px solid var(--line); background: var(--card); color: var(--ink); border-radius: 99px; width: 2.4rem; height: 2.4rem; font-weight: 800; font-size: 1.1rem; }
+.guide { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.guide section { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; scroll-margin-top: 90px; }
+.guide section.here { border-color: var(--brand); box-shadow: 0 0 0 3px #eef0ff; }
+.guide h3 { margin: 0 0 8px; font-size: 1.05rem; }
+.guide ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+.ai-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.ai-head .ava-frame { font-size: .95rem; width: 1.8em; height: 1.8em; border-width: 2px; }
+.copilot h2 .ava-frame { font-size: 1.2rem; }
 .layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; }
 @media (max-width: 860px) { .layout { grid-template-columns: minmax(0, 1fr); } .toggles { margin-left: 0; } }
 .layout > *, .card, main, section.panel { min-width: 0; }
@@ -179,7 +208,7 @@ dialog::backdrop { background: rgba(20, 25, 45, .55); }
   <div class="brand">🧮 studIA <span class="pill" id="status">…</span></div>
   <label><span data-i18n="language">Idioma</span>
     <select id="lang"><option value="cat">Català</option><option value="esp">Español</option><option value="eng">English</option></select></label>
-  <label><span data-i18n="level">Nivel</span>
+  <label><span data-i18n="level">Curso</span>
     <select id="level"></select></label>
   <div class="toggles" role="group" aria-label="Accessibility">
     <button class="toggle" id="t-tdah" aria-pressed="false"></button>
@@ -187,6 +216,7 @@ dialog::backdrop { background: rgba(20, 25, 45, .55); }
     <button class="toggle" id="t-calc" aria-pressed="false"></button>
   </div>
   <button class="coins" id="coinsBtn">🪙 <span id="coins">0</span> <span id="avatarNow"></span></button>
+  <button class="help-btn" id="helpBtn">?</button>
 </header>
 
 <div id="pomodoro" class="pomo" hidden style="max-width:1068px;margin:12px auto 0">
@@ -204,15 +234,18 @@ dialog::backdrop { background: rgba(20, 25, 45, .55); }
   <button role="tab" id="tab-test" aria-selected="false" data-tab="test"></button>
   <button role="tab" id="tab-shop" aria-selected="false" data-tab="shop"></button>
   <button role="tab" id="tab-profile" aria-selected="false" data-tab="profile"></button>
+  <button role="tab" id="tab-guide" aria-selected="false" data-tab="guide"></button>
 </nav>
 
 <main>
   <!-- 1. APRENDER -->
   <section class="panel" id="learn" role="tabpanel" hidden>
     <h2 data-i18n="learnTitle"></h2>
-    <div class="grid-topics" id="topicGrid"></div>
-    <div class="theory-box" id="theoryBox"></div>
-    <p><button class="btn" id="practiceTopic"></button></p>
+    <div class="learn-layout">
+      <div class="grid-topics" id="topicGrid"></div>
+      <div class="lesson" id="theoryBox"></div>
+    </div>
+    <button class="btn" id="practiceTopic"></button>
   </section>
 
   <!-- 2. PRACTICAR -->
@@ -225,7 +258,7 @@ dialog::backdrop { background: rgba(20, 25, 45, .55); }
     <div class="layout">
       <div class="card" id="pCard"><p class="thinking" data-i18n="loading"></p></div>
       <div class="card copilot">
-        <h2>🤖 <span data-i18n="copilot"></span></h2>
+        <h2><span id="copilotAvatar"></span> <span data-i18n="copilot"></span></h2>
         <div class="quick">
           <button class="btn ghost" id="bTheory"></button>
           <button class="btn ghost" id="bSimilar"></button>
@@ -249,7 +282,10 @@ dialog::backdrop { background: rgba(20, 25, 45, .55); }
       <button class="btn" id="testStart"></button>
     </div>
     <div id="testRun" hidden>
-      <div class="row"><span class="chip" id="testLevel"></span><span class="muted" id="testCount"></span></div>
+      <div class="row" style="justify-content:space-between">
+        <div class="row"><span class="chip" id="testLevel"></span><span class="muted" id="testCount"></span></div>
+        <button class="btn ghost" id="testAbandon"></button>
+      </div>
       <div class="progress"><div id="testBar" style="width:0"></div></div>
       <div class="card" id="tCard"></div>
       <div id="tFeedback" aria-live="polite"></div>
@@ -282,6 +318,12 @@ dialog::backdrop { background: rgba(20, 25, 45, .55); }
     <div class="profile-top" id="profileTop"></div>
     <div class="stats" id="profileStats"></div>
     <div id="profileSlots"></div>
+  </section>
+
+  <!-- 6. GUÍA -->
+  <section class="panel" id="guide" role="tabpanel" hidden>
+    <h2 data-i18n="guideTitle"></h2>
+    <div class="guide" id="guideBody"></div>
   </section>
 </main>
 
@@ -319,7 +361,7 @@ const qs = o => Object.entries(o).filter(([, v]) => v !== '' && v != null).map((
 /* ---------- textos de la interfaz ---------- */
 const T = {
   cat: {
-    language: 'Idioma', level: 'Nivell', topic: 'Tema', allTopics: 'Tots els temes', tdah: 'Pas a pas', dys: 'Frases curtes', calc: 'Suport visual',
+    language: 'Idioma', level: 'Curs', topic: 'Tema', allTopics: 'Tots els temes', tdah: 'Pas a pas', dys: 'Frases curtes', calc: 'Suport visual',
     learn: '1. Aprendre', practice: '2. Practicar', test: '3. Test', learnTitle: 'Tria un tema i repassa la teoria',
     practiceTopic: 'Practicar aquest tema →', newProblem: '↻ Nou problema', loading: 'Carregant…', copilot: 'Copilot studIA',
     bTheory: '💡 Teoria del tema', bSimilar: '🔍 Exemple similar (RAG)', bHint: '🤖 Pista Pas 1 (LLM)', ask: 'Preguntar a studIA',
@@ -332,9 +374,9 @@ const T = {
     correct: '🎉 Correcte!', wrong: 'Ho tornes a provar? Aquesta no és.', next: 'Següent problema →', noProblems: 'No hi ha problemes amb aquests filtres.',
     offline: 'No puc connectar amb el servidor.', pomodoro: 'Pomodoro', start: '▶ Començar', pause: '⏸ Pausa', pomoDone: 'Descans! 🎉',
     pomoGo: 'Concentra\'t!', calcNote: 'Les opcions no són quantitats senzilles: no es poden dibuixar.', calcTitle: 'Comparació visual de les opcions',
-    testTitle: 'Repte adaptatiu', testIntro: 'Sense pistes. Si encertes, el següent problema és d\'un nivell més; si falles, d\'un menys.',
-    testStart: 'Començar el repte', testQ: 'Pregunta', testRight: '✓ Correcte', testWrong: '✗ Incorrecte', testNow: 'Nivell',
-    testDone: 'Repte acabat', testScore: 'Encerts', testAgain: 'Tornar a començar', testNoMore: 'No queden més problemes d\'aquest nivell.',
+    testTitle: 'Repte adaptatiu', testIntro: 'Sense pistes. Si encertes, el següent problema és d\'un curs més; si falles, d\'un menys.',
+    testStart: 'Començar el repte', testQ: 'Pregunta', testRight: '✓ Correcte', testWrong: '✗ Incorrecte', testNow: 'Curs',
+    testDone: 'Repte acabat', testScore: 'Encerts', testAgain: 'Tornar a començar', testNoMore: 'No queden més problemes d\'aquest curs.',
     analytics: 'Analítiques', errorsBy: 'Errors per tema', noErrors: 'Cap error registrat. 🎉', attempts: 'Intents', accuracy: 'Precisió', coinsL: 'Monedes',
     shop: '4. Botiga', profile: '5. Perfil', shopTitle: 'Botiga', gachaTitle: 'Gacha (es veu a la matriu LED!)',
     gInfo: 'Cada tirada costa {c} monedes i et dóna un objecte que encara no tens.', gPull: '🎰 Tirar ({c} 🪙)', gSpin: 'Girant…',
@@ -344,9 +386,11 @@ const T = {
     testCoins: 'Si aproves (mínim un {p}%), guanyes fins a {m} monedes segons la nota. A la pràctica: {c} per problema encertat.',
     testPassed: 'Aprovat!', testFailed: 'Encara no: cal un {p}% per aprovar i guanyar monedes.', testGrade: 'Nota', coinsEarned: 'Monedes guanyades',
     student: 'Alumne', owned: 'Objectes', profileHint: 'Personalitza el teu perfil amb el que compris a la botiga.',
+    tutorSays: 'Abans de començar, recorda:', abandon: '✕ Abandonar el test', abandonConfirm: 'Segur que vols abandonar el test? No guanyaràs monedes.',
+    abandoned: 'Has abandonat el test. Les respostes que ja has donat es guarden al teu progrés.',
   },
   esp: {
-    language: 'Idioma', level: 'Nivel', topic: 'Tema', allTopics: 'Todos los temas', tdah: 'Paso a paso', dys: 'Frases cortas', calc: 'Apoyo visual',
+    language: 'Idioma', level: 'Curso', topic: 'Tema', allTopics: 'Todos los temas', tdah: 'Paso a paso', dys: 'Frases cortas', calc: 'Apoyo visual',
     learn: '1. Aprender', practice: '2. Practicar', test: '3. Test', learnTitle: 'Elige un tema y repasa la teoría',
     practiceTopic: 'Practicar este tema →', newProblem: '↻ Nuevo problema', loading: 'Cargando…', copilot: 'Copiloto studIA',
     bTheory: '💡 Teoría del tema', bSimilar: '🔍 Ejemplo similar (RAG)', bHint: '🤖 Pista Paso 1 (LLM)', ask: 'Preguntar a studIA',
@@ -359,9 +403,9 @@ const T = {
     correct: '🎉 ¡Correcto!', wrong: '¿Lo intentas otra vez? Esa no es.', next: 'Siguiente problema →', noProblems: 'No hay problemas con esos filtros.',
     offline: 'No puedo conectar con el servidor.', pomodoro: 'Pomodoro', start: '▶ Empezar', pause: '⏸ Pausa', pomoDone: '¡Descanso! 🎉',
     pomoGo: '¡Concéntrate!', calcNote: 'Las opciones no son cantidades sencillas: no se pueden dibujar.', calcTitle: 'Comparación visual de las opciones',
-    testTitle: 'Reto adaptativo', testIntro: 'Sin pistas. Si aciertas, el siguiente problema es un nivel más difícil; si fallas, uno más fácil.',
-    testStart: 'Empezar el reto', testQ: 'Pregunta', testRight: '✓ Correcto', testWrong: '✗ Incorrecto', testNow: 'Nivel',
-    testDone: 'Reto terminado', testScore: 'Aciertos', testAgain: 'Volver a empezar', testNoMore: 'No quedan más problemas de ese nivel.',
+    testTitle: 'Reto adaptativo', testIntro: 'Sin pistas. Si aciertas, el siguiente problema es de un curso más; si fallas, de uno menos.',
+    testStart: 'Empezar el reto', testQ: 'Pregunta', testRight: '✓ Correcto', testWrong: '✗ Incorrecto', testNow: 'Curso',
+    testDone: 'Reto terminado', testScore: 'Aciertos', testAgain: 'Volver a empezar', testNoMore: 'No quedan más problemas de ese curso.',
     analytics: 'Analíticas', errorsBy: 'Errores por tema', noErrors: 'Ningún error registrado. 🎉', attempts: 'Intentos', accuracy: 'Precisión', coinsL: 'Monedas',
     shop: '4. Tienda', profile: '5. Perfil', shopTitle: 'Tienda', gachaTitle: 'Gacha (¡se ve en la matriz LED!)',
     gInfo: 'Cada tirada cuesta {c} monedas y te da un objeto que aún no tienes.', gPull: '🎰 Tirar ({c} 🪙)', gSpin: 'Girando…',
@@ -371,9 +415,11 @@ const T = {
     testCoins: 'Si apruebas (mínimo un {p}%), ganas hasta {m} monedas según la nota. En la práctica: {c} por problema acertado.',
     testPassed: '¡Aprobado!', testFailed: 'Todavía no: hace falta un {p}% para aprobar y ganar monedas.', testGrade: 'Nota', coinsEarned: 'Monedas ganadas',
     student: 'Alumno', owned: 'Objetos', profileHint: 'Personaliza tu perfil con lo que compres en la tienda.',
+    tutorSays: 'Antes de empezar, recuerda:', abandon: '✕ Abandonar el test', abandonConfirm: '¿Seguro que quieres abandonar el test? No ganarás monedas.',
+    abandoned: 'Has abandonado el test. Las respuestas que ya diste se guardan en tu progreso.',
   },
   eng: {
-    language: 'Language', level: 'Level', topic: 'Topic', allTopics: 'All topics', tdah: 'Step by step', dys: 'Short sentences', calc: 'Visual support',
+    language: 'Language', level: 'Grade', topic: 'Topic', allTopics: 'All topics', tdah: 'Step by step', dys: 'Short sentences', calc: 'Visual support',
     learn: '1. Learn', practice: '2. Practise', test: '3. Test', learnTitle: 'Pick a topic and review the theory',
     practiceTopic: 'Practise this topic →', newProblem: '↻ New problem', loading: 'Loading…', copilot: 'studIA copilot',
     bTheory: '💡 Topic theory', bSimilar: '🔍 Similar example (RAG)', bHint: '🤖 Step 1 hint (LLM)', ask: 'Ask studIA',
@@ -386,9 +432,9 @@ const T = {
     correct: '🎉 Correct!', wrong: 'Try again? That is not it.', next: 'Next problem →', noProblems: 'No problems match these filters.',
     offline: 'Cannot reach the server.', pomodoro: 'Pomodoro', start: '▶ Start', pause: '⏸ Pause', pomoDone: 'Break time! 🎉',
     pomoGo: 'Focus!', calcNote: 'The options are not simple quantities, so they cannot be drawn.', calcTitle: 'Visual comparison of the options',
-    testTitle: 'Adaptive challenge', testIntro: 'No hints. If you get it right, the next problem is one level harder; if not, one level easier.',
-    testStart: 'Start the challenge', testQ: 'Question', testRight: '✓ Correct', testWrong: '✗ Wrong', testNow: 'Level',
-    testDone: 'Challenge finished', testScore: 'Correct', testAgain: 'Start again', testNoMore: 'No more problems at that level.',
+    testTitle: 'Adaptive challenge', testIntro: 'No hints. If you get it right, the next problem is from one grade up; if not, one grade down.',
+    testStart: 'Start the challenge', testQ: 'Question', testRight: '✓ Correct', testWrong: '✗ Wrong', testNow: 'Grade',
+    testDone: 'Challenge finished', testScore: 'Correct', testAgain: 'Start again', testNoMore: 'No more problems for that grade.',
     analytics: 'Analytics', errorsBy: 'Errors by topic', noErrors: 'No errors recorded. 🎉', attempts: 'Attempts', accuracy: 'Accuracy', coinsL: 'Coins',
     shop: '4. Shop', profile: '5. Profile', shopTitle: 'Shop', gachaTitle: 'Gacha (watch the LED matrix!)',
     gInfo: 'Each pull costs {c} coins and gives you an item you do not have yet.', gPull: '🎰 Pull ({c} 🪙)', gSpin: 'Spinning…',
@@ -398,6 +444,8 @@ const T = {
     testCoins: 'If you pass (at least {p}%), you earn up to {m} coins depending on your score. In practice: {c} per problem solved.',
     testPassed: 'Passed!', testFailed: 'Not yet: you need {p}% to pass and earn coins.', testGrade: 'Score', coinsEarned: 'Coins earned',
     student: 'Student', owned: 'Items', profileHint: 'Customise your profile with what you buy in the shop.',
+    tutorSays: 'Before you start, remember:', abandon: '✕ Leave the test', abandonConfirm: 'Are you sure you want to leave the test? You will not earn coins.',
+    abandoned: 'You left the test. The answers you already gave are saved in your progress.',
   },
 };
 const ITEM_NAMES = {
@@ -416,9 +464,60 @@ const ITEM_NAMES = {
 };
 const THEME_SWATCH = { 'theme:ocean': '#0b6e99', 'theme:forest': '#2f7a3d', 'theme:sunset': '#b4440e', 'theme:candy': '#a62582' };
 const KIND_ICON = { avatar: '🙂', theme: '🎨', frame: '🖼️', title: '🏷️' };
+const GUIDE_UI = {
+  cat: { guide: '6. Guia', guideTitle: "Com funciona studIA", help: 'Ajuda' },
+  esp: { guide: '6. Guía', guideTitle: 'Cómo funciona studIA', help: 'Ayuda' },
+  eng: { guide: '6. Guide', guideTitle: 'How studIA works', help: 'Help' },
+};
+// Guía de uso: una sección por pantalla (el botón "?" abre la de la pantalla actual).
+const GUIDE = {
+  esp: [
+    ['learn', '📚', 'Aprender', ["Elige un tema a la izquierda.", "Tu avatar te recuerda la teoría en unos pocos consejos.", "Pulsa «Practicar este tema» para hacer problemas de ese tema."]],
+    ['practice', '✏️', 'Practicar', ["Lee el problema y elige una respuesta (también con las teclas A a E).", "Si fallas, la opción se pone en rojo y studIA te explica por qué, sin darte la solución.", "En el copiloto puedes ver la teoría del tema, un ejemplo parecido ya resuelto, pedir una pista o escribir una duda.", "studIA atiende una petición a la vez: mientras piensa, espera a que termine.", "Cada problema que aciertas te da 10 monedas (solo la primera vez)."]],
+    ['test', '📝', 'Test', ["8 preguntas sin ayudas. Si aciertas, la siguiente es de un curso más; si fallas, de uno menos.", "Al acabar, si apruebas (50% o más), ganas hasta 120 monedas según la nota.", "Puedes salir con «Abandonar el test», pero no ganarás monedas."]],
+    ['shop', '🛍️', 'Tienda', ["Gasta tus monedas en avatares, paletas de colores, marcos y títulos.", "El gacha cuesta 30 monedas y te da un objeto que aún no tienes. ¡Mira la matriz LED de la placa mientras gira!"]],
+    ['profile', '👤', 'Perfil', ["Elige qué avatar, paleta, marco y título llevas puestos.", "Mira tus intentos, tu precisión, tu curso y tus monedas."]],
+    ['modes', '♿', 'Modos de lectura', ["Paso a paso: el enunciado en pasos que puedes ir marcando, y un pomodoro para concentrarte.", "Frases cortas: una idea por línea, con más espacio y colores suaves.", "Apoyo visual: las opciones dibujadas como bloques o barras.", "Arriba puedes cambiar el idioma y el curso cuando quieras."]],
+    ['led', '💡', 'La matriz LED de la placa', ["✓ cuando aciertas y ✗ cuando fallas.", "Un punto que da vueltas mientras studIA piensa.", "El pomodoro: los minutos en grande y un punto que recorre el borde cada minuto.", "El gacha: un rodillo que se para en tu premio.", "Cuando no pasa nada: tu avatar baila, pasa el nombre STUDIA, baila un muñeco y brillan estrellas."]],
+  ],
+  cat: [
+    ['learn', '📚', 'Aprendre', ["Tria un tema a l'esquerra.", "El teu avatar et recorda la teoria en uns quants consells.", "Prem «Practicar aquest tema» per fer problemes d'aquell tema."]],
+    ['practice', '✏️', 'Practicar', ["Llegeix el problema i tria una resposta (també amb les tecles A a E).", "Si falles, l'opció es posa en vermell i studIA t'explica per què, sense donar-te la solució.", "Al copilot pots veure la teoria del tema, un exemple semblant ja resolt, demanar una pista o escriure un dubte.", "studIA atén una petició cada vegada: mentre pensa, espera que acabi.", "Cada problema que encertes et dóna 10 monedes (només la primera vegada)."]],
+    ['test', '📝', 'Test', ["8 preguntes sense ajudes. Si encertes, la següent és d'un curs més; si falles, d'un menys.", "En acabar, si aproves (50% o més), guanyes fins a 120 monedes segons la nota.", "Pots sortir amb «Abandonar el test», però no guanyaràs monedes."]],
+    ['shop', '🛍️', 'Botiga', ["Gasta les monedes en avatars, paletes de colors, marcs i títols.", "El gacha costa 30 monedes i et dóna un objecte que encara no tens. Mira la matriu LED de la placa mentre gira!"]],
+    ['profile', '👤', 'Perfil', ["Tria quin avatar, paleta, marc i títol portes posats.", "Mira els teus intents, la precisió, el curs i les monedes."]],
+    ['modes', '♿', 'Modes de lectura', ["Pas a pas: l'enunciat en passos que pots anar marcant, i un pomodoro per concentrar-te.", "Frases curtes: una idea per línia, amb més espai i colors suaus.", "Suport visual: les opcions dibuixades com a blocs o barres.", "A dalt pots canviar l'idioma i el curs quan vulguis."]],
+    ['led', '💡', 'La matriu LED de la placa', ["✓ quan encertes i ✗ quan falles.", "Un punt que fa voltes mentre studIA pensa.", "El pomodoro: els minuts en gran i un punt que recorre la vora cada minut.", "El gacha: un corró que s'atura al teu premi.", "Quan no passa res: el teu avatar balla, passa el nom STUDIA, balla un ninot i brillen estrelles."]],
+  ],
+  eng: [
+    ['learn', '📚', 'Learn', ["Pick a topic on the left.", "Your avatar reminds you of the theory in a few tips.", "Press “Practise this topic” to solve problems on that topic."]],
+    ['practice', '✏️', 'Practise', ["Read the problem and pick an answer (or press A to E on the keyboard).", "If you are wrong, the option turns red and studIA explains why, without giving away the answer.", "In the copilot you can see the topic theory, a similar solved example, ask for a hint or type a question.", "studIA handles one request at a time: while it thinks, wait for it to finish.", "Each problem you solve gives you 10 coins (only the first time)."]],
+    ['test', '📝', 'Test', ["8 questions, no help. If you are right, the next one is one grade up; if not, one grade down.", "At the end, if you pass (50% or more), you earn up to 120 coins depending on your score.", "You can leave with “Leave the test”, but you will not earn coins."]],
+    ['shop', '🛍️', 'Shop', ["Spend your coins on avatars, colour palettes, frames and titles.", "The gacha costs 30 coins and gives you an item you do not have yet. Watch the board's LED matrix while it spins!"]],
+    ['profile', '👤', 'Profile', ["Choose which avatar, palette, frame and title you wear.", "See your attempts, accuracy, grade and coins."]],
+    ['modes', '♿', 'Reading modes', ["Step by step: the problem in steps you can tick off, and a pomodoro to help you focus.", "Short sentences: one idea per line, with more space and soft colours.", "Visual support: the options drawn as blocks or bars.", "At the top you can change the language and the grade at any time."]],
+    ['led', '💡', "The board's LED matrix", ["✓ when you are right and ✗ when you are wrong.", "A dot that goes round while studIA is thinking.", "The pomodoro: the minutes in big digits and a dot that circles the border every minute.", "The gacha: a reel that stops on your prize.", "When nothing is happening: your avatar dances, the name STUDIA scrolls by, a stick figure dances and stars twinkle."]],
+  ],
+};
+const g = k => (GUIDE_UI[S.lang] || GUIDE_UI.eng)[k];
+function renderGuide(focus) {
+  $('#guideBody').replaceChildren(...(GUIDE[S.lang] || GUIDE.eng).map(([id, icon, title, items]) =>
+    el('section', { id: 'guide-' + id, class: id === focus ? 'here' : '' },
+      el('h3', {}, `${icon} ${title}`), el('ul', {}, items.map(x => el('li', {}, x))))));
+}
 const fill = (s, o) => String(s).replace(/\{(\w)\}/g, (_, k) => (k in o ? o[k] : ''));
 const t = k => (T[S.lang] && T[S.lang][k]) || T.eng[k] || k;
+// README: M3Kang tiene 8 niveles y el 0 es 5º de primaria; un nivel por curso, hasta 2º de bachillerato.
+const COURSES = {
+  cat: ['5è de primària', '6è de primària', "1r d'ESO", "2n d'ESO", "3r d'ESO", "4t d'ESO", '1r de batxillerat', '2n de batxillerat'],
+  esp: ['5º de primaria', '6º de primaria', '1º de ESO', '2º de ESO', '3º de ESO', '4º de ESO', '1º de bachillerato', '2º de bachillerato'],
+  eng: ['Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'],
+};
+const course = n => (COURSES[S.lang] || COURSES.eng)[Number(n)] || String(n);
 const TOPIC_ICON = { 'Geometría': '📐', 'Combinatoria': '🎲', 'Lógica': '🧩', 'Aritmética': '➕', 'Patrones': '🔢' };
+const TOPIC_COLOR = { 'Geometría': '#0f766e', 'Combinatoria': '#9d1f86', 'Lógica': '#b4440e', 'Aritmética': '#3f51d6', 'Patrones': '#4d7c0f' };
+// La teoría de cada tema es un párrafo: se enseña como una lista de consejos, frase a frase.
+const tipsOf = text => String(text || '').split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
 const AVATAR_EMOJI = { fox: '🦊', owl: '🦉', cat: '🐱', robot: '🤖', rocket: '🚀', dino: '🦖', panda: '🐼', unicorn: '🦄' };
 
 /* ---------- estado ---------- */
@@ -444,10 +543,15 @@ function applyStatic() {
   $('#askBtn').textContent = t('ask'); $('#askInput').placeholder = t('askPh');
   $('#testStart').textContent = t('testStart');
   $('#tab-shop').textContent = t('shop'); $('#tab-profile').textContent = t('profile');
+  $('#testAbandon').textContent = t('abandon');
+  $('#tab-guide').textContent = g('guide');
+  $('#helpBtn').title = g('help'); $('#helpBtn').setAttribute('aria-label', g('help'));
+  $('#guide h2').textContent = g('guideTitle');
+  renderGuide(S.guideFocus);
   renderTestIntro();
   $('#pomoStart').textContent = pomo.running ? t('pause') : t('start');
   const sel = $('#level'); const cur = String(S.level);
-  sel.replaceChildren(...[0, 1, 2, 3, 4, 5, 6, 7].map(i => el('option', { value: i }, String(i))));
+  sel.replaceChildren(...[0, 1, 2, 3, 4, 5, 6, 7].map(i => el('option', { value: i }, course(i))));
   sel.value = cur;
   const ts = $('#topicSel'); const ct = S.topic;
   ts.replaceChildren(el('option', { value: '' }, t('allTopics')),
@@ -534,7 +638,7 @@ function calcNode(p) {
 
 function problemMeta(p) {
   const topic = ((S.theory && S.theory.topics) || []).find(x => x.topic === p.topic);
-  return el('div', { class: 'row' }, el('span', { class: 'chip' }, '#' + p.id), el('span', { class: 'chip' }, t('level') + ' ' + p.level),
+  return el('div', { class: 'row' }, el('span', { class: 'chip' }, '#' + p.id), el('span', { class: 'chip' }, course(p.level)),
     topic ? el('span', { class: 'chip' }, (TOPIC_ICON[p.topic] || '') + ' ' + topic.name) : null);
 }
 
@@ -546,7 +650,7 @@ function renderPractice() {
   const opts = optionsNode(p, pickPractice);
   opts.querySelectorAll('.opt').forEach(b => {
     if (S.wrongSet.has(b.dataset.letter)) { b.classList.add('wrong'); b.disabled = true; }
-    if (done) b.disabled = true;
+    if (done || S.busy) b.disabled = true;  // mientras la IA piensa, no se puede responder
     if (done && b.dataset.letter === S.solved) b.classList.add('right');
   });
   card.replaceChildren(problemMeta(p), statementNode(p), opts, S.modes.calc ? calcNode(p) : '', el('div', { id: 'pFeedback', 'aria-live': 'polite' }));
@@ -577,7 +681,7 @@ async function loadPractice(fresh, keepId) {
 }
 
 async function pickPractice(letter) {
-  if (!S.problem || S.solved || S.checking) return;
+  if (!S.problem || S.solved || S.checking || S.busy) return;
   S.checking = true;
   const p = S.problem;
   const btn = $(`#pCard .opt[data-letter="${letter}"]`);
@@ -602,19 +706,28 @@ async function pickPractice(letter) {
 
 async function explainWrong(p, letter) {
   // Normalmente ya está precalculada desde que se cargó el problema.
+  if (S.busy) return;
   const log = $('#log');
   const wait = el('div', { class: 'ai thinking' }, t('explaining'));
   log.prepend(wait);
+  setAiBusy(true);
   try {
     const r = await api('/api/explain', { problem_id: p.id, language: S.lang, choice: letter, mode: 'practice' });
     if (S.problem === p) addAi('explain', r);
   } catch (e) { if (S.problem === p) log.prepend(el('div', { class: 'ai' }, el('div', { class: 'feedback bad' }, e.message))); }
-  finally { wait.remove(); }
+  finally { wait.remove(); setAiBusy(false); }
 }
 
 /* ---------- panel del copiloto ---------- */
 function setCopilotBusy(on) {
   ['#bTheory', '#bSimilar', '#bHint', '#askBtn', '#askInput'].forEach(s => { $(s).disabled = on; });
+}
+// Una sola llamada a la IA a la vez: mientras piensa, ni copiloto ni opciones.
+function setAiBusy(on) {
+  S.busy = on; setCopilotBusy(on);
+  $('#pCard').querySelectorAll('.opt').forEach(b => {
+    b.disabled = on || S.wrongSet.has(b.dataset.letter) || Boolean(S.solved);
+  });
 }
 function guardBlock(r) {
   const noModel = r.status && r.status.startsWith('error');
@@ -633,22 +746,26 @@ function addAi(kind, r, question) {
   const log = $('#log');
   if (question) log.prepend(el('div', { class: 'ai user' }, el('div', { class: 'kind' }, t('doubtKind')), question));
   const kinds = { hint: 'hintKind', doubt: 'hintKind', explain: 'explainKind' };
-  log.prepend(el('div', { class: 'ai' }, el('div', { class: 'kind' }, '🤖 ' + t(kinds[kind] || 'hintKind')), r.text, ...guardBlock(r)));
+  log.prepend(el('div', { class: 'ai' },
+    el('div', { class: 'ai-head' }, avatarNode(false), el('div', { class: 'kind', style: 'margin:0' }, t(kinds[kind] || 'hintKind'))),
+    r.text, ...guardBlock(r)));
   while (log.children.length > 8) log.lastChild.remove();
 }
 async function withThinking(fn) {
-  if (!S.problem || S.busy) return;
-  S.busy = true; setCopilotBusy(true);
+  if (!S.problem || S.busy || S.checking) return;
+  setAiBusy(true);
   const log = $('#log');
   const wait = el('div', { class: 'ai thinking' }, t('thinking'));
   log.prepend(wait);
   try { await fn(); } catch (e) { log.prepend(el('div', { class: 'ai' }, el('div', { class: 'feedback bad' }, e.message))); }
-  finally { wait.remove(); S.busy = false; setCopilotBusy(false); }
+  finally { wait.remove(); setAiBusy(false); }
 }
 $('#bTheory').onclick = () => {
   if (!S.problem || !S.theory) return;
   const x = S.theory.topics.find(y => y.topic === S.problem.topic);
-  if (x) $('#log').prepend(el('div', { class: 'ai' }, el('div', { class: 'kind' }, `📘 ${t('theoryKind')}: ${x.name}`), x.content));
+  if (x) $('#log').prepend(el('div', { class: 'ai', style: `--c:${TOPIC_COLOR[x.topic] || 'var(--brand)'}` },
+    el('div', { class: 'ai-head' }, avatarNode(false), el('div', { class: 'kind', style: 'margin:0' }, `📘 ${t('theoryKind')}: ${x.name}`)),
+    el('ol', { class: 'tips' }, tipsOf(x.content).map(s => el('li', {}, s)))));
 };
 $('#bSimilar').onclick = () => withThinking(async () => {
   const r = await api('/api/similar?' + qs({ problem_id: S.problem.id, language: S.lang, mode: 'practice' }));
@@ -657,7 +774,7 @@ $('#bSimilar').onclick = () => withThinking(async () => {
   if (!r.example) { $('#log').prepend(el('div', { class: 'ai' }, t('noExample'), meta)); return; }
   const ex = r.example;
   const opts = Object.keys(ex.options || {}).sort().map(l => el('div', {}, `${l}) ${ex.options[l]}`));
-  $('#log').prepend(el('div', { class: 'ai' }, el('div', { class: 'kind' }, `🔍 ${t('similarKind')} · ${t('level')} ${ex.level}`),
+  $('#log').prepend(el('div', { class: 'ai' }, el('div', { class: 'kind' }, `🔍 ${t('similarKind')} · ${course(ex.level)}`),
     el('div', {}, stripNo(ex.text)), el('div', { class: 'muted', style: 'margin:6px 0' }, opts),
     el('div', {}, el('b', {}, `${t('answerWas')}: ${ex.answer}) ${ex.answer_text}`)), meta));
 });
@@ -685,11 +802,19 @@ function renderLearn() {
   if (!S.theory) return;
   const cur = S.topic || S.theory.topics[0].topic;
   grid.replaceChildren(...S.theory.topics.map(x => el('button', {
-    class: 'topic', 'aria-pressed': String(x.topic === cur),
+    class: 'topic', 'aria-pressed': String(x.topic === cur), style: `--c:${TOPIC_COLOR[x.topic] || 'var(--brand)'}`,
     onclick: () => { S.topic = x.topic; $('#topicSel').value = x.topic; renderLearn(); },
   }, el('span', { class: 'ico', 'aria-hidden': 'true' }, TOPIC_ICON[x.topic] || '📚'), el('b', {}, x.name))));
   const sel = S.theory.topics.find(x => x.topic === cur);
-  box.replaceChildren(el('b', {}, `${TOPIC_ICON[cur] || ''} ${sel.name}`), el('p', { style: 'margin:.5em 0 0' }, sel.content));
+  box.style.setProperty('--c', TOPIC_COLOR[cur] || 'var(--brand)');
+  // La lección la "explica" el avatar del alumno, en un bocadillo, consejo a consejo.
+  box.replaceChildren(
+    el('div', { class: 'lesson-head' }, el('span', { class: 'big', 'aria-hidden': 'true' }, TOPIC_ICON[cur] || '📚'), el('h3', {}, sel.name)),
+    el('div', { class: 'lesson-body' },
+      el('div', { class: 'tutor' }, avatarNode(false), el('div', { class: 'bubble' },
+        el('b', {}, t('tutorSays')),
+        el('ol', { class: 'tips', style: 'margin-top:8px' }, tipsOf(sel.content).map(s => el('li', {}, s))))),
+      el('div', {}, $('#practiceTopic'))));
 }
 $('#practiceTopic').onclick = () => {
   if (!S.topic && S.theory) S.topic = S.theory.topics[0].topic;
@@ -717,7 +842,7 @@ async function testStart() {
 }
 function renderTest() {
   const T_ = S.test, p = T_.problem; if (!p) return;
-  $('#testLevel').textContent = `${t('testNow')} ${p.level}`;
+  $('#testLevel').textContent = course(p.level);
   $('#testCount').textContent = `${t('testQ')} ${T_.n + 1}/${T_.total}`;
   $('#testBar').style.width = (T_.n / T_.total * 100) + '%';
   const opts = optionsNode(p, pickTest);
@@ -736,8 +861,10 @@ async function pickTest(letter) {
     if (b) b.classList.add(r.correct ? 'right' : 'wrong');
     $('#tFeedback').replaceChildren(el('div', { class: 'feedback ' + (r.correct ? 'ok' : 'bad') }, r.correct ? t('testRight') : t('testWrong')));
     const nxt = r.next;
-    if (r.test_done) { setTimeout(() => testFinish(r.test_done), 900); return; }
+    if (r.test_done) { setTimeout(() => { if (S.test.session) testFinish(r.test_done); }, 900); return; }
+    const session = T_.session;
     setTimeout(() => {
+      if (T_.session !== session) return;  // lo ha abandonado mientras tanto
       T_.problem = nxt.problem; T_.level = nxt.target_level; T_.answered = false;
       $('#tFeedback').replaceChildren(); renderTest();
     }, 1000);
@@ -749,7 +876,7 @@ function testFinish(d) {
     el('div', { class: 'stats' },
       el('div', { class: 'stat' }, t('testScore'), el('b', {}, `${d.right}/${d.n}`)),
       el('div', { class: 'stat' }, t('testGrade'), el('b', {}, d.grade_pct + '%')),
-      el('div', { class: 'stat' }, t('testNow'), el('b', {}, String(S.test.level))),
+      el('div', { class: 'stat' }, t('testNow'), el('b', {}, course(S.test.level))),
       el('div', { class: 'stat' }, t('coinsEarned'), el('b', {}, '🪙 +' + d.coins_earned))),
     el('div', { class: 'feedback ' + (d.passed ? 'ok' : 'bad') }, d.passed ? '🎉 ' + t('testPassed') : fill(t('testFailed'), { p: d.pass_pct })),
     d.ran_out ? el('p', { class: 'muted' }, t('testNoMore')) : '',
@@ -757,6 +884,14 @@ function testFinish(d) {
   refreshProgress();
 }
 $('#testStart').onclick = testStart;
+$('#testAbandon').onclick = async () => {
+  if (!S.test.session || !confirm(t('abandonConfirm'))) return;
+  try { await api('/api/test/abandon', { session: S.test.session }); } catch { /* ya estaba cerrado */ }
+  Object.assign(S.test, { active: false, session: null, problem: null });
+  testShow('intro'); $('#testIntro').querySelectorAll('.feedback').forEach(n => n.remove());
+  $('#testIntro').append(el('div', { class: 'feedback info' }, t('abandoned')));
+  refreshProgress();
+};
 
 /* ---------- progreso, analíticas y gacha ---------- */
 async function refreshProgress() {
@@ -779,6 +914,8 @@ function applyLook() {
   if (eq.theme) document.body.classList.add(eq.theme.replace(':', '-'));
   $('#coins').textContent = S.shop.coins;
   $('#avatarNow').replaceChildren(avatarNode(false));
+  $('#copilotAvatar').replaceChildren(avatarNode(false));
+  if (S.tab === 'learn') renderLearn();
 }
 function itemPreview(it) {
   if (it.kind === 'avatar') return el('div', { class: 'prev' }, AVATAR_EMOJI[it.id] || '🎭');
@@ -846,7 +983,7 @@ function renderProfile() {
   $('#profileStats').replaceChildren(
     el('div', { class: 'stat' }, t('attempts'), el('b', {}, String(s.attempts))),
     el('div', { class: 'stat' }, t('accuracy'), el('b', {}, acc)),
-    el('div', { class: 'stat' }, t('testNow'), el('b', {}, String(s.current_level))),
+    el('div', { class: 'stat' }, t('testNow'), el('b', {}, course(s.current_level))),
     el('div', { class: 'stat' }, t('coinsL'), el('b', {}, '🪙 ' + s.coins)),
     el('div', { class: 'stat' }, t('owned'), el('b', {}, `${s.owned.length}/${s.items.length}`)));
   $('#profileSlots').replaceChildren(el('p', { class: 'muted' }, t('profileHint')), ...['avatar', 'theme', 'frame', 'title'].map(kind => {
@@ -868,7 +1005,7 @@ function renderAnalytics() {
     el('div', { class: 'stats' },
       el('div', { class: 'stat' }, t('attempts'), el('b', {}, String(p.attempts))),
       el('div', { class: 'stat' }, t('accuracy'), el('b', {}, p.attempts ? acc + '%' : '–')),
-      el('div', { class: 'stat' }, t('testNow'), el('b', {}, String(p.current_level))),
+      el('div', { class: 'stat' }, t('testNow'), el('b', {}, course(p.current_level))),
       el('div', { class: 'stat' }, t('coinsL'), el('b', {}, '🪙 ' + p.coins))),
     el('h3', { style: 'margin:12px 0 4px;font-size:1rem' }, t('errorsBy')),
     total ? el('div', {}, topics.map(k => {
@@ -878,6 +1015,13 @@ function renderAnalytics() {
     })) : el('p', { class: 'muted' }, t('noErrors')));
 }
 $('#coinsBtn').onclick = () => switchTab('shop');
+// "?" en la cabecera, en todas las pantallas: abre la guía en la sección de la pantalla actual.
+$('#helpBtn').onclick = () => {
+  S.guideFocus = S.tab === 'guide' ? null : S.tab;
+  switchTab('guide');
+  const sec = S.guideFocus && $('#guide-' + S.guideFocus);
+  if (sec) sec.scrollIntoView({ block: 'start' });
+};
 
 /* ---------- Pomodoro (modo TDAH) ---------- */
 const pomo = { running: false, left: 25 * 60, timer: null };
@@ -917,8 +1061,9 @@ $('#pomoStart').onclick = () => {
 function switchTab(tab) {
   S.tab = tab;
   document.querySelectorAll('[role=tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
-  ['learn', 'practice', 'test', 'shop', 'profile'].forEach(id => { $('#' + id).hidden = id !== tab; });
+  ['learn', 'practice', 'test', 'shop', 'profile', 'guide'].forEach(id => { $('#' + id).hidden = id !== tab; });
   if (tab === 'learn') renderLearn();
+  if (tab === 'guide') renderGuide(S.guideFocus);
   if (tab === 'test' || tab === 'shop' || tab === 'profile') refreshProgress();
 }
 document.querySelectorAll('[role=tab]').forEach(b => { b.onclick = () => switchTab(b.dataset.tab); });

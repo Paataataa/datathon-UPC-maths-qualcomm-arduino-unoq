@@ -9,9 +9,11 @@ App de App Lab que dibuja en la matriz LED 8x13 lo que pasa en la web de studIA 
 | Pista o duda al LLM | Un punto que da vueltas mientras piensa (mínimo 1,5 s) |
 | Pomodoro | Como un reloj: los minutos que quedan en grande y un punto con estela que da una vuelta al borde por minuto (el segundero). En pausa, a media luz. Al acabar, "00" y el borde laten 4 s |
 | Gacha | Un rodillo de tragaperras que frena y se para en el objeto ganado |
-| Nada | El avatar equipado en el perfil |
+| Nada (ni pomodoro) | Animación de espera, en bucle: el avatar equipado bailando, "STUDIA" desplazándose, un monigote bailando y estrellas que se encienden y apagan |
 
-`python/main.py` decide cada fotograma y `sketch/sketch.ino` solo lo dibuja, por el Bridge. Nada parpadea más de tres veces por segundo.
+Las imágenes nunca se superponen: las animaciones se ponen en cola y cada una se ve entera. Por ejemplo, con el pomodoro en marcha, si aciertas y luego fallas, se ve el tick, después la cruz, y vuelve el pomodoro.
+
+`python/main.py` decide cada fotograma y `sketch/sketch.ino` solo lo dibuja, por el Bridge. Nada parpadea más de tres veces por segundo, salvo el arranque del rodillo del gacha, que gira más rápido.
 
 ## Instalarla en la placa
 

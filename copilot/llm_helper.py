@@ -27,12 +27,15 @@ Prueba desde terminal (en la raíz del repo):
     python3 -m copilot.llm_helper --mock          # sin placa, respuestas simuladas
     python3 -m copilot.llm_helper --mock --mock-leak   # fuerza fugas para ver el guardrail
 """
+import http.client
 import json
 import os
 import re
+import socket
 import threading
 import time
 import urllib.error
+from urllib.parse import urlparse
 
 from .client import get, post
 from .config import CONFIG, ROOT
@@ -47,6 +50,7 @@ SEED = int(CONFIG["SEED"])
 # Modo mock: respuestas simuladas para trabajar sin túnel SSH
 _MOCK = False
 _MOCK_LEAK = False  # en mock, hace que el "LLM" se chive de la solución
+_MOCK_DELAY = 0.05  # segundos que "piensa" el LLM simulado
 
 
 def set_mock(enabled=True, leak=False):
@@ -112,10 +116,92 @@ def _task_wrong(problem, letter, value):
 
 # ---------------------------------------------------------------- HTTP / mock
 
-def _chat(messages, max_tokens, timeout):
-    """Una petición a llama-server. Devuelve (texto, timings). Lanza si falla."""
+class Cancelled(ConnectionAbortedError):
+    """La llamada se cortó desde otro hilo (Cancel.cancel)."""
+
+
+class Cancel:
+    """Permite cortar desde otro hilo una llamada al LLM en curso.
+
+    Medido en la placa: si se corta mientras llama-server aún lee el enunciado, la
+    siguiente petición empieza enseguida; si ya está escribiendo, pierde unos segundos.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._set = False
+        self._conn = None
+
+    def is_set(self):
+        return self._set
+
+    def cancel(self):
+        with self._lock:
+            self._set = True
+            conn = self._conn
+        if conn is not None and conn.sock is not None:
+            try:
+                conn.sock.shutdown(socket.SHUT_RDWR)  # desbloquea la lectura del otro hilo
+            except OSError:
+                pass
+
+    def _attach(self, conn):
+        with self._lock:
+            if self._set:
+                return False
+            self._conn = conn
+            return True
+
+    def _detach(self):
+        with self._lock:
+            self._conn = None
+
+
+def _stream_chat(payload, timeout, cancel):
+    """Como post(), pero en streaming: así cerrar la conexión corta la llamada."""
+    url = urlparse(LLM_URL)
+    conn = http.client.HTTPConnection(url.hostname, url.port, timeout=timeout)
+    if not cancel._attach(conn):
+        raise Cancelled("cancelada")
+    try:
+        conn.request("POST", url.path, json.dumps({**payload, "stream": True}),
+                     {"Content-Type": "application/json"})
+        if cancel.is_set():
+            raise Cancelled("cancelada")
+        response = conn.getresponse()
+        if response.status != 200:
+            raise OSError(f"llama-server HTTP {response.status}")
+        parts, timings = [], {}
+        for raw in response:
+            line = raw.strip()
+            if not line.startswith(b"data:"):
+                continue
+            data = line[5:].strip()
+            if data == b"[DONE]":
+                break
+            chunk = json.loads(data)
+            timings = chunk.get("timings") or timings
+            for choice in chunk.get("choices") or []:
+                parts.append((choice.get("delta") or {}).get("content") or "")
+        if cancel.is_set():
+            raise Cancelled("cancelada")
+        return "".join(parts), timings
+    except (OSError, http.client.HTTPException) as error:
+        if cancel.is_set():
+            raise Cancelled("cancelada") from None
+        if isinstance(error, OSError):
+            raise
+        raise OSError(str(error)) from None
+    finally:
+        cancel._detach()
+        conn.close()
+
+
+def _chat(messages, max_tokens, timeout, cancel=None):
+    """Una petición a llama-server. Devuelve (texto, timings). Lanza si falla.
+    Con cancel (un Cancel), la llamada se puede cortar desde otro hilo."""
     if _MOCK:
-        return _mock_completion(messages, max_tokens)
+        return _mock_completion(messages, max_tokens, cancel)
     payload = {
         "messages": messages,
         "temperature": 0,
@@ -124,13 +210,19 @@ def _chat(messages, max_tokens, timeout):
         "cache_prompt": True,       # reutiliza el prefijo del KV cache
         "stop": ["\n"],             # una sola frase
     }
+    if cancel is not None:
+        return _stream_chat(payload, timeout, cancel)
     data = post(LLM_URL, payload, timeout=timeout)
     text = (data["choices"][0]["message"].get("content") or "")
     return text, data.get("timings", {})
 
 
-def _mock_completion(messages, max_tokens):
-    time.sleep(0.05)
+def _mock_completion(messages, max_tokens, cancel=None):
+    end = time.perf_counter() + _MOCK_DELAY
+    while time.perf_counter() < end:
+        if cancel is not None and cancel.is_set():
+            raise Cancelled("cancelada")
+        time.sleep(0.01)
     user = messages[-1]["content"]
     timings = {"prompt_n": 30, "cache_n": 100, "predicted_n": 20}
     if max_tokens <= 1:
@@ -289,7 +381,7 @@ def prewarm_problem_cache(problem_dict, async_mode=True):
 
 
 def _respond(problem, task, max_tokens, max_words, timeout, block_reason=None,
-             skip_llm=False):
+             skip_llm=False, cancel=None):
     """Núcleo común: LLM -> limpieza -> guardrail -> respuesta con métricas."""
     start = time.perf_counter()
     out = {"text": "", "raw_text": "", "leaked_and_blocked": False, "block_reason": None,
@@ -304,7 +396,7 @@ def _respond(problem, task, max_tokens, max_words, timeout, block_reason=None,
         out["text"] = _safe_fallback(problem)
     else:
         try:
-            raw, timings = _chat(_messages(problem, task), max_tokens, timeout)
+            raw, timings = _chat(_messages(problem, task), max_tokens, timeout, cancel)
             out["raw_text"] = _tidy(raw, max_words)
             out["prompt_tokens"] = timings.get("prompt_n", 0)
             out["cached_tokens"] = timings.get("cache_n", 0)
@@ -315,6 +407,9 @@ def _respond(problem, task, max_tokens, max_words, timeout, block_reason=None,
                 out["text"] = _safe_fallback(problem)
             else:
                 out["text"] = out["raw_text"]
+        except Cancelled:
+            out["status"] = "cancelled"
+            out["text"] = _safe_fallback(problem)
         except (OSError, ValueError, KeyError, urllib.error.URLError) as error:
             out["status"] = f"error: {error}"
             out["text"] = _safe_fallback(problem)
@@ -322,7 +417,7 @@ def _respond(problem, task, max_tokens, max_words, timeout, block_reason=None,
     return out
 
 
-def get_socratic_hint(problem_dict, student_question=None, timeout=30.0):
+def get_socratic_hint(problem_dict, student_question=None, timeout=30.0, cancel=None):
     """Pista socrática de 1 frase. Devuelve un dict con al menos:
 
         text                texto seguro para mostrar al alumno
@@ -337,11 +432,11 @@ def get_socratic_hint(problem_dict, student_question=None, timeout=30.0):
         if _is_injection(q):  # ni siquiera llamamos al modelo: ahorra 10 s y cierra la puerta
             return _respond(problem_dict, None, 0, 0, timeout, block_reason="injection",
                             skip_llm=True)
-        return _respond(problem_dict, _task_question(problem_dict, q), 40, 25, timeout)
-    return _respond(problem_dict, _task_hint(problem_dict), 40, 18, timeout)
+        return _respond(problem_dict, _task_question(problem_dict, q), 40, 25, timeout, cancel=cancel)
+    return _respond(problem_dict, _task_hint(problem_dict), 40, 18, timeout, cancel=cancel)
 
 
-def explain_wrong_answer(problem_dict, chosen_letter, timeout=30.0):
+def explain_wrong_answer(problem_dict, chosen_letter, timeout=30.0, cancel=None):
     """Explica en 1 frase (<= 20 palabras) por qué la opción elegida falla, sin dar `label`."""
     problem_dict = _coerce(problem_dict)
     chosen_letter = (chosen_letter or "").upper()
@@ -351,7 +446,8 @@ def explain_wrong_answer(problem_dict, chosen_letter, timeout=30.0):
                    block_reason=None, status="correct_choice")
         return out
     value = _norm((problem_dict.get("options") or {}).get(chosen_letter, ""))
-    return _respond(problem_dict, _task_wrong(problem_dict, chosen_letter, value), 40, 20, timeout)
+    return _respond(problem_dict, _task_wrong(problem_dict, chosen_letter, value), 40, 20, timeout,
+                    cancel=cancel)
 
 
 # ------------------------------------------------------------- prueba por terminal

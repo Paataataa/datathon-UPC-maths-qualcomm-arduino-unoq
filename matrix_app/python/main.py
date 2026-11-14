@@ -8,7 +8,11 @@ studia_server.py envía eventos a  GET http://127.0.0.1:7000/led/<evento>/<arg>
                              y un punto que da una vuelta al borde por minuto
     pomodoro / pause-S-T | reset | end
     gacha / <icono>          rodillo de tragaperras que se para en el objeto ganado
-    avatar / <icono>         el avatar equipado, que se ve cuando no pasa nada más
+    avatar / <icono>         el avatar equipado (sale en la animación de espera)
+
+Nunca se superponen dos imágenes: las animaciones se ponen en cola y cada una se ve
+entera; al acabar vuelve el fondo (el pomodoro si está en marcha; si no, la animación
+de espera: el avatar bailando, "STUDIA" desplazándose, un monigote bailando y estrellas).
 
 Todo se decide aquí, en Python: el sketch solo dibuja el fotograma (brillo 0..7).
 Nada parpadea más de tres veces por segundo.
@@ -43,6 +47,27 @@ DIGITS = {
     "6": ["###", "#..", "###", "#.#", "###"], "7": ["###", "..#", ".#.", ".#.", ".#."],
     "8": ["###", "#.#", "###", "#.#", "###"], "9": ["###", "#.#", "###", "..#", "###"],
 }
+LETTERS = {
+    "S": ["###", "#..", "###", "..#", "###"], "T": ["###", ".#.", ".#.", ".#.", ".#."],
+    "U": ["#.#", "#.#", "#.#", "#.#", "###"], "D": ["##.", "#.#", "#.#", "#.#", "##."],
+    "I": ["###", ".#.", ".#.", ".#.", "###"], "A": [".#.", "#.#", "###", "#.#", "#.#"],
+}
+# Monigote 5x8 que baila: brazos arriba y piernas abiertas / brazos abajo y piernas juntas
+DANCER = [
+    ["#.#.#", ".###.", "..#..", "..#..", ".#.#.", ".#.#.", "#...#", "....."],
+    ["..#..", ".###.", "#.#.#", "..#..", "..#..", ".#.#.", ".#.#.", "....."],
+]
+# Muñeco de espaldas meneando el culete: el trasero a la izquierda / a la derecha
+WIGGLE = [
+    ["......##.....", "......##.....", ".....###.....", ".....##......",
+     "...##.##.....", "...#####.....", "....#..#.....", "....#..#....."],
+    [".....##......", ".....##......", ".....###.....", "......##.....",
+     "......##.##..", "......#####..", ".....#..#....", ".....#..#...."],
+]
+# Guerrero con espada de luz: la empuñadura está a la derecha de la mano
+WARRIOR = ["....", ".#..", "###.", ".#.#", ".#..", "#.#.", "#.#.", "...."]
+HILT = (3, 4)
+SWINGS = ((-1, 1), (0, 1), (1, 1), (0, 1), (-1, 0), (-1, 1))  # (dy, dx) de la hoja
 TICK = [(4, 3), (5, 4), (6, 5), (5, 6), (4, 7), (3, 8), (2, 9), (1, 10)]
 # El borde de la matriz (38 LEDs) en el sentido del reloj, desde arriba en el centro:
 # el "segundero" del pomodoro da una vuelta por minuto.
@@ -53,6 +78,10 @@ BORDER = ([(0, x) for x in range(6, COLS)] + [(y, COLS - 1) for y in range(1, RO
 ORBIT = [(round(3.5 - 3 * math.cos(2 * math.pi * k / 12)), round(6 + 4 * math.sin(2 * math.pi * k / 12)))
          for k in range(12)]
 EVENTS = ("correct", "wrong", "thinking", "pomodoro", "gacha", "avatar", "dyscalculia")
+DURATION = {"correct": 2.0, "wrong": 2.0, "gacha": 5.7, "pomo_end": 4.0}
+MAX_QUEUE = 4          # si llegan muchos eventos seguidos, los más antiguos se descartan
+STANDBY = (("dance_avatar", 6.0), ("title", None), ("dancer", 6.0), ("wiggle", 5.0),
+           ("saber", 6.2), ("stars", 4.0))
 
 
 def blank():
@@ -67,6 +96,10 @@ def stamp(grid, rows, top, left, value=ON):
                 grid[y][x] = value if ch == "#" else min(value, MID)
 
 
+def title_width():
+    return len("STUDIA") * 4 - 1
+
+
 class Matrix:
     """Estado de la matriz. frame() devuelve el fotograma actual (8 filas x 13 columnas)."""
 
@@ -75,7 +108,9 @@ class Matrix:
         self.events = deque()   # los añaden los hilos de la API; los consume frame()
         self.idle = "smile"
         self.pomo = None        # {"left", "total", "running", "since"}
-        self.anim = None        # {"name", "start", ...}
+        self.anim = None        # la animación que se ve ahora: {"name", "start", ...}
+        self.queue = deque()    # las que esperan su turno
+        self.standby_start = None
 
     def push(self, event, arg):
         if event not in EVENTS or not isinstance(arg, str) or len(arg) > 40:
@@ -84,21 +119,30 @@ class Matrix:
         return True
 
     def state(self):
-        return {"idle": self.idle, "pomodoro": self.pomo, "animation": self.anim and self.anim["name"]}
+        return {"idle": self.idle, "pomodoro": self.pomo, "animation": self.anim and self.anim["name"],
+                "queued": [a["name"] for a in self.queue]}
+
+    def _enqueue(self, anim):
+        if len(self.queue) >= MAX_QUEUE:
+            self.queue.popleft()
+        self.queue.append(anim)
 
     def _handle(self, event, arg, now):
         if event in ("correct", "wrong"):
-            self.anim = {"name": event, "start": now}
+            self._enqueue({"name": event})
         elif event == "thinking":
             if arg == "start":
-                self.anim = {"name": "thinking", "start": now, "stop": None}
-            elif self.anim and self.anim["name"] == "thinking":
-                self.anim["stop"] = max(now, self.anim["start"] + 1.5)  # que se vea al menos 1,5 s
+                self._enqueue({"name": "thinking", "stop": None})
+            else:  # "stop": la última animación de pensar (en curso o en cola) termina
+                for a in [self.anim, *reversed(self.queue)]:
+                    if a and a["name"] == "thinking" and a["stop"] is None:
+                        a["stop"] = now
+                        break
         elif event == "gacha":
             won = arg if arg in ICONS else "smile"
             pool = [k for k in ICONS if k != "smile"]
             rng = random.Random(now)
-            self.anim = {"name": "gacha", "start": now, "reel": [rng.choice(pool) for _ in range(12)] + [won]}
+            self._enqueue({"name": "gacha", "reel": [rng.choice(pool) for _ in range(12)] + [won]})
         elif event == "avatar":
             self.idle = arg if arg in ICONS else "smile"
         elif event == "pomodoro":
@@ -110,30 +154,35 @@ class Matrix:
                 self.pomo = None
             elif parts[0] == "end":
                 self.pomo = None
-                self.anim = {"name": "pomo_end", "start": now}
+                self._enqueue({"name": "pomo_end"})
         # "dyscalculia" se acepta, pero de momento no dibuja nada
 
     def frame(self):
         now = self.clock()
         while self.events:
             self._handle(*self.events.popleft(), now)
-        if self.anim:
+        while True:
+            if self.anim is None:
+                if not self.queue:
+                    break
+                self.anim = self.queue.popleft()
+                self.anim["start"] = now  # empieza cuando le toca, no cuando llegó
             grid = self._animation(now)
             if grid is not None:
                 return grid
             self.anim = None
         return self._base(now)
 
-    # -- fondo: cuenta atrás del pomodoro, o el avatar --
+    # -- fondo: cuenta atrás del pomodoro, o la animación de espera --
     def pomo_remaining(self, now):
         p = self.pomo
         return max(0.0, p["left"] - (now - p["since"]) if p["running"] else p["left"])
 
     def _base(self, now):
-        grid = blank()
         if self.pomo is None:
-            stamp(grid, ICONS[self.idle], 0, 2)
-            return grid
+            return self._standby(now)
+        self.standby_start = None
+        grid = blank()
         left = self.pomo_remaining(now)
         running = self.pomo["running"]
         # Como un reloj MM:SS: los dígitos son los minutos enteros que quedan y un punto
@@ -150,19 +199,69 @@ class Matrix:
             grid[y][x] = v
         return grid
 
-    # -- animaciones cortas encima del fondo --
-    def _animation(self, now):
-        a, t = self.anim, now - self.anim["start"]
+    def _standby(self, now):
+        """Animación de espera: el avatar bailando, el título, un monigote y estrellas."""
+        if self.standby_start is None:
+            self.standby_start = now
+        phases = [(name, title_width() / 5 + 2.6 if length is None else length) for name, length in STANDBY]
+        t = (now - self.standby_start) % sum(length for _, length in phases)
+        for name, length in phases:
+            if t < length:
+                break
+            t -= length
         grid = blank()
+        if name == "dance_avatar":
+            dy = 0 if int(t / 0.4) % 2 == 0 else 1          # sube y baja
+            dx = (0, 1, 0, -1)[int(t / 0.8) % 4]            # y se balancea
+            stamp(grid, ICONS[self.idle], dy, 2 + dx)
+        elif name == "title":
+            x = COLS - int(t * 5)                           # 5 columnas por segundo: sin parpadeos
+            for i, ch in enumerate("STUDIA"):
+                stamp(grid, LETTERS[ch], 1, x + i * 4)
+        elif name == "dancer":
+            pose = DANCER[int(t / 0.4) % 2]
+            dx = (0, 2, 0, -2)[int(t / 0.8) % 4]
+            stamp(grid, pose, 0, 4 + dx)
+        elif name == "wiggle":
+            stamp(grid, WIGGLE[int(t / 0.35) % 2], 0, 0)
+        elif name == "saber":
+            stamp(grid, WARRIOR, 0, 0)
+            # 0,8 s quieto; 1 s encendiéndola; la blande; 0,8 s apagándola
+            if t < 0.8:
+                length, swing = 0, 0
+            elif t < 1.8:
+                length, swing = math.ceil((t - 0.8) / 1.0 * 8), 0
+            elif t < 1.8 + 0.45 * len(SWINGS):
+                length, swing = 8, int((t - 1.8) / 0.45)
+            else:
+                length = max(0, 8 - math.ceil((t - 1.8 - 0.45 * len(SWINGS)) / 0.8 * 8))
+                swing = 0
+            y, x = HILT
+            grid[y][x] = MID
+            dy, dx = SWINGS[swing]
+            for i in range(1, length + 1):
+                by, bx = y + dy * i, x + dx * i
+                if 0 <= by < ROWS and 0 <= bx < COLS:
+                    grid[by][bx] = ON
+        else:  # estrellas: cada segundo, 6 en otro sitio, que se encienden y apagan suave
+            rng = random.Random(int(now))
+            level = round(math.sin(math.pi * (now % 1.0)) * ON)  # 0 al cambiar de sitio
+            for _ in range(6):
+                grid[rng.randrange(ROWS)][rng.randrange(COLS)] = level
+        return grid
+
+    # -- animaciones cortas, una cada vez --
+    def _animation(self, now):
+        a = self.anim
+        t = now - a["start"]
+        grid = blank()
+        if a["name"] in DURATION and t > DURATION[a["name"]]:
+            return None
         if a["name"] == "correct":
-            if t > 2.0:
-                return None
             for y, x in TICK[:max(1, math.ceil(len(TICK) * min(1.0, t / 0.5)))]:
                 grid[y][x] = ON
             return grid
         if a["name"] == "wrong":
-            if t > 2.0:
-                return None
             shift = (0, -1, 0, 1)[int(t / 0.2) % 4] if t < 0.8 else 0
             for i in range(6):
                 for y, x in ((1 + i, 4 + i + shift), (1 + i, 9 - i + shift)):
@@ -170,7 +269,8 @@ class Matrix:
                         grid[y][x] = ON
             return grid
         if a["name"] == "thinking":
-            if (a["stop"] is not None and now >= a["stop"]) or t > 60:
+            # Se ve al menos 1,5 s aunque la respuesta ya estuviera preparada
+            if (a["stop"] is not None and now >= max(a["stop"], a["start"] + 1.5)) or t > 60:
                 return None
             head = int(t / 0.1) % len(ORBIT)
             for back, value in ((2, LOW), (1, MID), (0, ON)):
@@ -178,9 +278,7 @@ class Matrix:
                 grid[y][x] = value
             return grid
         if a["name"] == "gacha":
-            spin, hold = 3.2, 2.5
-            if t > spin + hold:
-                return None
+            spin = 3.2
             travel = (len(a["reel"]) - 1) * 9  # icono de 8 filas + 1 de separación
             offset = round((1 - (1 - min(1.0, t / spin)) ** 3) * travel)  # frena al final
             for i, icon in enumerate(a["reel"]):
@@ -193,8 +291,6 @@ class Matrix:
                     grid[y][x] = ON
             return grid
         if a["name"] == "pomo_end":
-            if t > 4.0:
-                return None
             value = ON if int(t) % 2 == 0 else LOW  # late una vez por segundo
             stamp(grid, DIGITS["0"], 1, 3, value)
             stamp(grid, DIGITS["0"], 1, 7, value)
