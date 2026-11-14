@@ -89,7 +89,9 @@ def load_problems(args):
     langs = set(filter(None, args.languages.split(",")))
     if langs:
         problems = [p for p in problems if p["language"] in langs]
-    random.Random(42).shuffle(problems)  # same sample as eval.py
+    # Fixed seed, so runs compare. Not the same sample as eval.py: problems without
+    # options are dropped before the shuffle.
+    random.Random(42).shuffle(problems)
     return problems[:args.limit] if args.limit else problems
 
 
@@ -215,9 +217,11 @@ def main():
         latency("prewarm_itself", [w["prewarm_s"] for w in warm_ok], "hidden while the student reads")
         if cold and warm_hint:
             add("speedup_x", round(statistics.mean(cold) / statistics.mean(warm_hint), 1))
-        add("tokens_read_hint_without_prewarm",
-            round(statistics.mean(r["prompt_tokens"] for r in ok if r["kind"] == "hint"), 0))
-        add("tokens_read_hint_with_prewarm", round(statistics.mean(w["prompt_tokens"] for w in warm_ok), 0))
+        cold_tokens = [r["prompt_tokens"] for r in ok if r["kind"] == "hint"]
+        if cold_tokens:
+            add("tokens_read_hint_without_prewarm", round(statistics.mean(cold_tokens), 0))
+        if warm_ok:
+            add("tokens_read_hint_with_prewarm", round(statistics.mean(w["prompt_tokens"] for w in warm_ok), 0))
     for kind in ("doubt", "wrong"):
         latency(f"{kind}_after_hint", [r["seconds"] for r in ok if r["kind"] == kind],
                 "prefix already cached by the previous call on the same problem")

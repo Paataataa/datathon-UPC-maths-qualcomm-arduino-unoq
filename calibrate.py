@@ -5,9 +5,10 @@
     python3 calibrate.py --input data/train.jsonl --n 60      # the letter prior (about 10 min)
     python3 calibrate.py --input data/train.jsonl --n 60 --passes 2
     python3 calibrate.py --no-options-only --input data/train.jsonl   # answers for problems without options (no model)
-    python3 calibrate.py --rag-scores --input data/val.jsonl --n 50  # how to choose RAG_MIN_SCORE
+    python3 calibrate.py --rag-scores --input data/train.jsonl --n 50  # how to choose RAG_MIN_SCORE
 
-Use TRAIN problems for the prior, never validation, or the validation score is a lie.
+Use TRAIN problems for the prior and for RAG_MIN_SCORE, never validation, or the
+validation score is a lie. --rag-scores skips each problem's own id, so train works.
 The result goes to copilot/calibration.json. Commit that file: it holds only averages,
 and the jury's run needs it on the board.
 """
