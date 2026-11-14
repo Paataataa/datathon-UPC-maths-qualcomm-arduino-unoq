@@ -50,3 +50,32 @@ def answer_letter(problem, examples=(), timeout=60, image_b64=None, url=URL):
     }, timeout=timeout)
     letter = response["choices"][0]["message"]["content"].strip()
     return letter, response.get("timings", {})
+
+
+def letter_logprobs(problem, examples=(), image_b64=None, timeout=60, url=URL, top=20):
+    """Like answer_letter, but also return the model's log-probability for each letter.
+
+    Returns (scores, letter, timings). scores is {"A": logprob, ...} for the letters the
+    server reported among its top `top` tokens at the first position (it may be fewer than
+    five: debias.py gives the missing ones a floor). letter is the greedy answer.
+    Same prompt, same grammar and same seed as answer_letter, so the greedy letter is identical.
+    """
+    response = post(url, {
+        "messages": build_messages(problem, examples, image_b64),
+        "grammar": "root ::= [A-E]",
+        "max_tokens": 1,
+        "temperature": 0,
+        "seed": int(CONFIG["SEED"]),
+        "cache_prompt": True,
+        "logprobs": True,
+        "top_logprobs": top,
+    }, timeout=timeout)
+    choice = response["choices"][0]
+    letter = choice["message"]["content"].strip()
+    scores = {}
+    content = (choice.get("logprobs") or {}).get("content") or [{}]
+    for entry in content[0].get("top_logprobs", []):
+        token = str(entry.get("token", "")).strip().upper()
+        if len(token) == 1 and token in "ABCDE" and token not in scores:
+            scores[token] = float(entry["logprob"])
+    return scores, letter, response.get("timings", {})
