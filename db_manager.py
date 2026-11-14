@@ -23,6 +23,7 @@ class DBManager:
         self.studia_path = Path(studia_path)
         self.users_path = Path(users_path)
         self.users_path.parent.mkdir(parents=True, exist_ok=True)
+        self._index_cache = None  # (mtime, {id: (problem, vec, norm)}): index.db se lee una sola vez
         self._init_users()
 
     @staticmethod
@@ -133,12 +134,45 @@ class DBManager:
         norm_b = math.sqrt(sum(x * x for x in b))
         return dot / (norm_a * norm_b) if norm_a and norm_b else 0.0
 
+    def _english_index(self):
+        """Los problemas ingleses de index.db, en memoria.
+
+        Se leen una vez (como copilot/rag.py) y solo se vuelven a leer si
+        index.db cambia: cada búsqueda es un bucle, sin SQLite ni JSON.
+        """
+        if not self.index_path.is_file():
+            raise FileNotFoundError(f"No existe {self.index_path}. Genera los datos de prueba o copia la BD real.")
+        mtime = self.index_path.stat().st_mtime
+        if self._index_cache is None or self._index_cache[0] != mtime:
+            rows = {}
+            with self._connect_existing(self.index_path) as con:
+                for _key, problem_json, blob in con.execute("SELECT key, problem, vec FROM problems"):
+                    p = json.loads(problem_json)
+                    if p.get("language") != "eng":
+                        continue
+                    vec = self._vector_from_blob(blob)
+                    rows[p["id"]] = (p, vec, math.sqrt(sum(x * x for x in vec)))
+            self._index_cache = (mtime, rows)
+        return self._index_cache[1]
+
     def _indexed_english_vector(self, problem_id):
-        with self._connect_existing(self.index_path) as con:
-            row = con.execute("SELECT vec FROM problems WHERE key=?", (f"{problem_id}|eng",)).fetchone()
+        row = self._english_index().get(problem_id)
         if row is None:
             raise ValueError(f"No hay embedding inglés indexado para {problem_id}")
-        return self._vector_from_blob(row[0])
+        return row[1]
+
+    def _query_vector(self, source, use_server):
+        """Vector de búsqueda del problema de origen (su versión inglesa).
+
+        index.db solo tiene problemas de train: si el problema no está (p. ej.
+        uno de validación), se calcula con el servidor de embeddings.
+        """
+        if not use_server:
+            try:
+                return self._indexed_english_vector(source["id"])
+            except ValueError:
+                pass
+        return self._live_english_vector(source)
 
     def _search(self, query_vec, max_level, language, exclude_id, strictly_easier=False,
                 exact_level=None, excluded_problem_ids=None):
@@ -148,26 +182,25 @@ class DBManager:
             raise ValueError(f"El nivel debe estar entre 0 y {MAX_LEVEL}")
         ranked = []
         excluded_problem_ids = set(excluded_problem_ids or ())
-        with self._connect_existing(self.index_path) as con:
-            for key, problem_json, blob in con.execute("SELECT key, problem, vec FROM problems"):
-                p = json.loads(problem_json)
-                if (p.get("language") != "eng" or p["id"] == exclude_id
-                        or p["id"] in excluded_problem_ids):
+        query_norm = math.sqrt(sum(x * x for x in query_vec))
+        for pid, (p, vec, norm) in self._english_index().items():
+            if pid == exclude_id or pid in excluded_problem_ids:
+                continue
+            level = p["level"]
+            if exact_level is not None:
+                if level != exact_level:
                     continue
-                level = p["level"]
-                if exact_level is not None:
-                    if level != exact_level:
-                        continue
-                elif strictly_easier:
-                    if level >= max_level:
-                        continue
-                else:
-                    if level > max_level:
-                        continue
-                if not p.get("options"):
+            elif strictly_easier:
+                if level >= max_level:
                     continue
-                score = self.cosine(query_vec, self._vector_from_blob(blob))
-                ranked.append((score, p))
+            else:
+                if level > max_level:
+                    continue
+            if not p.get("options"):
+                continue
+            dot = sum(x * y for x, y in zip(query_vec, vec))
+            score = dot / (query_norm * norm) if query_norm and norm else 0.0
+            ranked.append((score, p))
         ranked.sort(key=lambda item: (-item[0], item[1]["id"]))
         for score, p in ranked:
             recommended = self.get_problem(p["id"], language)
@@ -205,17 +238,18 @@ class DBManager:
                             use_server=False):
         """Pista 2: busca por la versión inglesa, excluyendo el mismo ID.
 
-        use_server=False: emplea el vector almacenado (modo offline/de prueba;
-                         el problema de origen DEBE estar en index.db).
-        use_server=True:  usa el servidor oficial bge-small para crear un vector
-                         de CONSULTA; admite problemas fuera de index.db,
-                         incluidos los de validación de studia.db.
+        use_server=False: emplea el vector almacenado si el problema está en
+                         index.db (train); si no, recurre al servidor.
+        use_server=True:  usa siempre el servidor oficial bge-small para crear
+                         un vector de CONSULTA.
+
+        El resultado INCLUYE "label": es el ejemplo resuelto de la pista. Si la
+        página no debe ver la solución todavía, pásalo por public().
         """
         source = self.get_problem(problem_id, "eng")
         if source is None:
             raise ValueError(f"No encuentro el problema {problem_id} en inglés")
-        vec = (self._live_english_vector(source) if use_server
-               else self._indexed_english_vector(problem_id))
+        vec = self._query_vector(source, use_server)
         return self._search(vec, source["level"], language, problem_id, strictly_easier)
 
     def find_similar_from_vector(self, query_vector, max_level, language="cat", exclude_id=None):
@@ -243,6 +277,9 @@ class DBManager:
         La aplicación debe registrar el intento ACTUAL con record_problem_attempt
         después de verificar la respuesta en el servidor (nunca en el navegador).
         Si no existe candidato adecuado, devuelve None y no cambia el nivel.
+
+        El problema devuelto va SIN "label" (public). Para corregir y para las
+        pistas de llm_helper, vuelve a leerlo en el servidor con get_problem().
         """
         if not isinstance(was_correct, bool):
             raise ValueError("was_correct debe ser un booleano")
@@ -252,8 +289,7 @@ class DBManager:
         excluded = self.attempted_problem_ids(student_id) if student_id is not None else set()
         target = (min(MAX_LEVEL, source["level"] + 1) if was_correct
                   else max(0, source["level"] - 1))
-        vec = (self._live_english_vector(source) if use_server
-               else self._indexed_english_vector(problem_id))
+        vec = self._query_vector(source, use_server)
         result = self._search(
             vec, MAX_LEVEL, language, problem_id,
             exact_level=target, excluded_problem_ids=excluded,

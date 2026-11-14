@@ -297,6 +297,11 @@ def _respond(problem, task, max_tokens, max_words, timeout, block_reason=None,
     if skip_llm:
         out.update(leaked_and_blocked=True, block_reason=block_reason, status="blocked_input")
         out["text"] = _safe_fallback(problem)
+    elif not problem.get("label"):
+        # Sin la respuesta el guardrail no puede comprobar nada: no llamamos al modelo.
+        # Suele ser un problema pasado por DBManager.public(); usa get_problem() en el servidor.
+        out.update(status="no_label", block_reason="no_label")
+        out["text"] = _safe_fallback(problem)
     else:
         try:
             raw, timings = _chat(_messages(problem, task), max_tokens, timeout)
