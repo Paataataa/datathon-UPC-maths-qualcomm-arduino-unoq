@@ -19,6 +19,7 @@ import json
 import os
 import queue
 import random
+import re
 import secrets
 import sqlite3
 import sys
@@ -29,7 +30,7 @@ import urllib.error
 import urllib.request
 from hashlib import sha256
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
@@ -42,6 +43,9 @@ from db_manager import DBManager, MAX_LEVEL, VECTOR_DIM  # noqa: E402
 STATIC = os.path.join(ROOT, "static")
 LANGS = ("cat", "eng")  # los idiomas que prepara el README (paso 9: --languages eng,cat)
 MODES = ("practice", "test")
+# Clave de una imagen: <id>_<idioma>, como las escribe laptop/prepare_m3kang.py --save-images.
+# Sin "/" ni "\": una petición no puede nombrar ningún otro archivo.
+IMAGE_KEY = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
 
 # Monedas. Práctica: una vez por problema acertado. Test: solo al acabarlo, en proporción a
 # la nota y solo si apruebas. Un test perfecto da 1,5 veces lo que darían sus 8 problemas
@@ -303,13 +307,14 @@ def llm_view(result, precomputed=False, waited=None):
 
 
 class App:
-    def __init__(self, data_dir, mock, username):
+    def __init__(self, data_dir, mock, username, images_dir=None):
         for name in ("index.db", "studia.db"):
             path = os.path.join(data_dir, name)
             if not os.path.isfile(path):
                 hint = "build_index.py" if name == "index.db" else "build_studia_db.py"
                 raise SystemExit(f"Falta {path}. Se genera con {hint} (o cópiala de la placa).")
         self.mock = mock
+        self.images_dir = os.path.abspath(images_dir or os.path.join(data_dir, "images"))
         self.db = DBManager(os.path.join(data_dir, "index.db"), os.path.join(data_dir, "studia.db"),
                             os.path.join(data_dir, "users.db"))
         if mock:
@@ -334,6 +339,29 @@ class App:
             return fn()
         finally:
             self.ai_lock.release()
+
+    # -- imágenes de los problemas (data/images/<id>_<idioma>.png) --
+    def image_path(self, key):
+        """Ruta del PNG si existe. La clave solo puede ser <id>_<idioma>: nada de rutas."""
+        if not IMAGE_KEY.match(key or ""):
+            return None
+        path = os.path.join(self.images_dir, key + ".png")
+        return path if os.path.isfile(path) else None
+
+    def present(self, problem):
+        """El problema tal como lo ve el navegador: sin "label" y, si existe, con su imagen.
+
+        Busca la imagen en el idioma del alumno y, si no está, en inglés o catalán (la figura
+        y las opciones son las mismas). image_language dice cuál se ha usado.
+        """
+        shown = self.db.public(problem)
+        for language in dict.fromkeys((problem.get("language"), "eng", "cat")):
+            key = f"{problem['id']}_{language}"
+            if self.image_path(key):
+                shown["image"] = f"/image/{quote(key)}"
+                shown["image_language"] = language
+                break
+        return shown
 
     # -- lectura de studia.db (solo lectura, tablas theory y modes) --
     def _studia(self):
@@ -378,7 +406,7 @@ class App:
             problem = self.db.get_problem(clean_id(query["id"]), language)
             if problem is None:
                 raise ApiError(404, "problema desconocido")
-            return self.db.public(problem)
+            return self.present(problem)
         if query.get("id"):
             problem = self.db.get_problem(clean_id(query["id"]), language)
         else:
@@ -388,7 +416,7 @@ class App:
             raise ApiError(404, "no hay problemas con esos filtros")
         # Mientras el alumno lee, la placa ya prepara la pista y las explicaciones.
         self.pre.start_problem(problem)
-        return self.db.public(problem)
+        return self.present(problem)
 
     def _pick(self, language, level, topic, skip):
         sql = ("SELECT id FROM problems WHERE language=? AND level=? "
@@ -487,7 +515,7 @@ class App:
             return {"example": None, "seconds": seconds}
         example = found["problem"]
         # Es OTRO problema ya resuelto (exclude_id): enseñar su solución es el objetivo de la pista.
-        shown = self.db.public(example)
+        shown = self.present(example)
         shown["answer"] = example["label"]
         shown["answer_text"] = (example.get("options") or {}).get(example["label"], "")
         return {"example": shown, "similarity": found["similarity"], "seconds": seconds}
@@ -536,7 +564,7 @@ class App:
             self.tests[session] = {"current": problem["id"], "language": language, "n": 0,
                                    "right": 0, "done": False}
         return {"session": session, "total": TEST_TOTAL, "pass_pct": round(100 * TEST_PASS),
-                "max_coins": TEST_MAX_COINS, "problem": self.db.public(problem)}
+                "max_coins": TEST_MAX_COINS, "problem": self.present(problem)}
 
     def _check_test(self, session_id, problem, correct, language):
         with self.lock:
@@ -595,7 +623,7 @@ class App:
             return None
         if result is None:
             return None
-        return {"problem": result["problem"], "target_level": result["target_level"]}
+        return {"problem": self.present(result["problem"]), "target_level": result["target_level"]}
 
     # -- perfil, tienda y gacha --
     def progress(self):
@@ -706,12 +734,12 @@ def make_handler(app):
         def log_message(self, fmt, *args):
             sys.stderr.write("  " + fmt % args + "\n")
 
-        def send(self, code, body, kind="application/json; charset=utf-8"):
+        def send(self, code, body, kind="application/json; charset=utf-8", cache="no-store"):
             data = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=False).encode()
             self.send_response(code)
             self.send_header("Content-Type", kind)
             self.send_header("Content-Length", str(len(data)))
-            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cache-Control", cache)
             self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
             self.wfile.write(data)
@@ -735,6 +763,13 @@ def make_handler(app):
                 if method == "GET" and url.path in ("/", "/index.html"):
                     with open(os.path.join(STATIC, "index.html"), "rb") as f:
                         return self.send(200, f.read(), "text/html; charset=utf-8")
+                if method == "GET" and url.path.startswith("/image/"):
+                    path = app.image_path(unquote(url.path[len("/image/"):]))
+                    if path is None:
+                        raise ApiError(404, "sin imagen")
+                    with open(path, "rb") as f:
+                        # Las imágenes no cambian: el navegador las guarda y no parpadean al repintar
+                        return self.send(200, f.read(), "image/png", cache="public, max-age=3600")
                 route = ROUTES.get((method, url.path))
                 if route is None:
                     raise ApiError(404, "not found")
@@ -767,6 +802,8 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--mock", action="store_true", help="LLM y embeddings simulados (sin placa)")
     p.add_argument("--data-dir", default="data")
+    p.add_argument("--images", default=None,
+                   help="carpeta con los PNG de los problemas (por defecto DATA_DIR/images)")
     p.add_argument("--student", default="demo", help="alumno por defecto de la demo")
     p.add_argument("--host", default="127.0.0.1", help="0.0.0.0 para abrirlo a tu red")
     p.add_argument("--port", type=int, default=8001)
@@ -776,7 +813,7 @@ def main():
     os.chdir(ROOT)
     LED["url"] = args.led_url.rstrip("/")
 
-    app = App(args.data_dir, args.mock, args.student)
+    app = App(args.data_dir, args.mock, args.student, args.images)
     status = app.status()
     mode = "MOCK (simulado)" if args.mock else "real"
     print(f"studIA, modo {mode}. Alumno {args.student!r} (id {status['student_id']})")
@@ -787,6 +824,12 @@ def main():
             print("  Sin LLM las pistas devuelven la pista segura de reserva. "
                   "¿Túnel SSH a 8081/8082, o usa --mock?")
     print(f"  matriz LED: {LED['url'] or 'desactivada'}")
+    count = len([f for f in os.listdir(app.images_dir) if f.endswith(".png")]) if os.path.isdir(app.images_dir) else 0
+    if count:
+        print(f"  imágenes de los problemas: {count} en {app.images_dir}")
+    else:
+        print(f"  SIN imágenes de problemas en {app.images_dir}: los problemas se verán solo con texto.\n"
+              "  Genéralas con laptop/prepare_m3kang.py --save-images y cópialas ahí (ver README, 'Export the images').")
     avatar = app.db.get_equipped(app.student_id).get("avatar")
     notify_hardware("avatar", ITEMS[avatar]["led"] if avatar in ITEMS else "smile")
     print(f"Abre http://{args.host}:{args.port} (Ctrl+C para parar)", flush=True)

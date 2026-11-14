@@ -113,6 +113,11 @@ header .toggle { padding: 5px 11px; font-size: .9rem; }
 @media (max-width: 860px) { .layout { grid-template-columns: minmax(0, 1fr); } .toggles { margin-left: 0; } }
 .layout > *, .card, main, section.panel { min-width: 0; }
 .card { border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; background: var(--card); }
+.pimg { margin: 10px 0 14px; padding: 0; text-align: center; }
+.pimg img { max-width: 100%; max-height: 340px; width: auto; height: auto; background: #fff; border: 1px solid var(--line); border-radius: 10px; cursor: zoom-in; }
+.pimg figcaption { font-size: .8rem; color: var(--muted); margin-top: 4px; }
+#zoom { max-width: min(96vw, 1000px); padding: 12px; text-align: center; cursor: zoom-out; }
+#zoom img { max-width: 100%; max-height: 82vh; background: #fff; border-radius: 8px; }
 .statement { font-size: 1.08rem; margin: 10px 0 14px; overflow-wrap: anywhere; }
 .statement p { margin: 0 0 .6em; }
 .steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
@@ -332,6 +337,8 @@ dialog::backdrop { background: rgba(20, 25, 45, .55); }
   </section>
 </main>
 
+<dialog id="zoom" aria-label="image"><img alt=""></dialog>
+
 <script>
 (() => {
 'use strict';
@@ -379,6 +386,7 @@ const T = {
     correct: '🎉 Correcte!', wrong: 'Ho tornes a provar? Aquesta no és.', next: 'Següent problema →', noProblems: 'No hi ha problemes amb aquests filtres.',
     offline: 'No puc connectar amb el servidor.', pomodoro: 'Pomodoro', start: '▶ Començar', pause: '⏸ Pausa', pomoDone: 'Descans! 🎉',
     pomoGo: 'Concentra\'t!', calcNote: 'Les opcions no són quantitats senzilles: no es poden dibuixar.', calcTitle: 'Comparació visual de les opcions',
+    imgAlt: 'Figura del problema', imgZoom: 'Toca per ampliar', imgOtherLang: 'Imatge original (en un altre idioma)',
     testTitle: 'Repte adaptatiu', testIntro: 'Sense pistes. Si encertes, el següent problema és d\'un curs més; si falles, d\'un menys.',
     testStart: 'Començar el repte', testQ: 'Pregunta', testRight: '✓ Correcte', testWrong: '✗ Incorrecte', testNow: 'Curs',
     testDone: 'Repte acabat', testScore: 'Encerts', testAgain: 'Tornar a començar', testNoMore: 'No queden més problemes d\'aquest curs.',
@@ -409,6 +417,7 @@ const T = {
     correct: '🎉 Correct!', wrong: 'Try again? That is not it.', next: 'Next problem →', noProblems: 'No problems match these filters.',
     offline: 'Cannot reach the server.', pomodoro: 'Pomodoro', start: '▶ Start', pause: '⏸ Pause', pomoDone: 'Break time! 🎉',
     pomoGo: 'Focus!', calcNote: 'The options are not simple quantities, so they cannot be drawn.', calcTitle: 'Visual comparison of the options',
+    imgAlt: 'Problem figure', imgZoom: 'Click to enlarge', imgOtherLang: 'Original image (in another language)',
     testTitle: 'Adaptive challenge', testIntro: 'No hints. If you get it right, the next problem is from one grade up; if not, one grade down.',
     testStart: 'Start the challenge', testQ: 'Question', testRight: '✓ Correct', testWrong: '✗ Wrong', testNow: 'Grade',
     testDone: 'Challenge finished', testScore: 'Correct', testAgain: 'Start again', testNoMore: 'No more problems for that grade.',
@@ -603,6 +612,25 @@ function calcNode(p) {
   return svg;
 }
 
+function zoomImage(p) {
+  const d = $('#zoom'), img = d.querySelector('img');
+  img.src = p.image; img.alt = t('imgAlt') + ' ' + p.id;
+  d.showModal();
+}
+/* La imagen original del problema (figura y opciones). Si no carga, se quita sin dejar el icono roto. */
+function imageNode(p) {
+  if (!p || !p.image) return '';
+  const fig = el('figure', { class: 'pimg' });
+  const open = () => zoomImage(p);
+  fig.append(el('img', {
+    src: p.image, alt: t('imgAlt') + ' ' + p.id, title: t('imgZoom'), loading: 'lazy', role: 'button', tabindex: '0',
+    onerror: () => fig.remove(), onclick: open,
+    onkeydown: ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); } },
+  }));
+  if (p.image_language && p.image_language !== S.lang) fig.append(el('figcaption', {}, t('imgOtherLang')));
+  return fig;
+}
+
 function problemMeta(p) {
   const topic = ((S.theory && S.theory.topics) || []).find(x => x.topic === p.topic);
   return el('div', { class: 'row' }, el('span', { class: 'chip' }, '#' + p.id), el('span', { class: 'chip' }, course(p.level)),
@@ -620,7 +648,7 @@ function renderPractice() {
     if (done || S.busy) b.disabled = true;  // mientras la IA piensa, no se puede responder
     if (done && b.dataset.letter === S.solved) b.classList.add('right');
   });
-  card.replaceChildren(problemMeta(p), statementNode(p), opts, S.modes.calc ? calcNode(p) : '', el('div', { id: 'pFeedback', 'aria-live': 'polite' }));
+  card.replaceChildren(problemMeta(p), imageNode(p), statementNode(p), opts, S.modes.calc ? calcNode(p) : '', el('div', { id: 'pFeedback', 'aria-live': 'polite' }));
   if (S.feedback) showFeedback(S.feedback.kind, S.feedback.text, S.feedback.next);
 }
 
@@ -758,7 +786,7 @@ $('#bSimilar').onclick = () => withThinking(async gen => {
   const ex = r.example;
   const opts = Object.keys(ex.options || {}).sort().map(l => el('div', {}, `${l}) ${ex.options[l]}`));
   $('#log').prepend(el('div', { class: 'ai' }, el('div', { class: 'kind' }, `🔍 ${t('similarKind')} · ${course(ex.level)}`),
-    el('div', {}, stripNo(ex.text)), el('div', { class: 'muted', style: 'margin:6px 0' }, opts),
+    imageNode(ex), el('div', {}, stripNo(ex.text)), el('div', { class: 'muted', style: 'margin:6px 0' }, opts),
     el('div', {}, el('b', {}, `${t('answerWas')}: ${ex.answer}) ${ex.answer_text}`)), meta));
 });
 async function askLlm(question) {
@@ -832,7 +860,7 @@ function renderTest() {
   $('#testBar').style.width = (T_.n / T_.total * 100) + '%';
   const opts = optionsNode(p, pickTest);
   opts.querySelectorAll('.opt').forEach(b => { b.disabled = T_.answered; });
-  $('#tCard').replaceChildren(problemMeta(p), statementNode(p), opts, S.modes.calc ? calcNode(p) : '');
+  $('#tCard').replaceChildren(problemMeta(p), imageNode(p), statementNode(p), opts, S.modes.calc ? calcNode(p) : '');
 }
 async function pickTest(letter) {
   const T_ = S.test; if (T_.answered || !T_.problem) return;
@@ -1012,6 +1040,8 @@ $('#helpBtn').onclick = () => {
   const sec = S.guideFocus && $('#guide-' + S.guideFocus);
   if (sec) sec.scrollIntoView({ block: 'start' });
 };
+
+$('#zoom').onclick = () => $('#zoom').close();
 
 /* ---------- Pomodoro (modo TDAH) ---------- */
 const pomo = { running: false, left: 25 * 60, timer: null };
