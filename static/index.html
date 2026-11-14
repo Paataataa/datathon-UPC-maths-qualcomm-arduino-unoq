@@ -1,0 +1,786 @@
+<!doctype html>
+<html lang="ca">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>studIA</title>
+<style>
+:root {
+  --bg: #f4f6fb; --card: #ffffff; --ink: #1d2433; --muted: #5b6577; --line: #d9deea;
+  --brand: #3f51d6; --brand-ink: #ffffff; --ok: #14804a; --ok-bg: #e3f6ec;
+  --bad: #b3261e; --bad-bg: #fdeceb; --warn: #8a5a00; --warn-bg: #fff3d6; --focus: #ff9f1c;
+  --radius: 14px;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+/* Modo dislexia: tema crema de bajo estrés visual, más espacio entre letras, palabras y líneas */
+body.dys {
+  --bg: #fbf3dc; --card: #fffaec; --ink: #2b2a26; --muted: #5a564a; --line: #e4d8b4;
+  font-family: Verdana, "Trebuchet MS", Tahoma, sans-serif;
+  letter-spacing: .04em; word-spacing: .14em; line-height: 1.95;
+}
+body.dys .statement p { margin: 0 0 1.1em; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+button { font: inherit; cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .55; }
+header {
+  position: sticky; top: 0; z-index: 5; background: var(--card); border-bottom: 1px solid var(--line);
+  padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center;
+}
+.brand { font-weight: 800; font-size: 1.35rem; color: var(--brand); display: flex; align-items: center; gap: 8px; }
+.pill { font-size: .72rem; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--line); color: var(--ink); }
+.pill.up { background: var(--ok-bg); color: var(--ok); }
+.pill.down { background: var(--bad-bg); color: var(--bad); }
+.pill.mock { background: var(--warn-bg); color: var(--warn); }
+header label { font-size: .85rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+select, input[type=text] {
+  font: inherit; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink);
+}
+.toggles { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.toggle {
+  border: 2px solid var(--line); background: var(--card); color: var(--ink); border-radius: 99px; padding: 6px 14px; font-weight: 600;
+}
+.toggle[aria-pressed=true] { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.coins {
+  border: 2px solid #e0b100; background: #fff6cc; color: #5a4300; border-radius: 99px; padding: 6px 14px; font-weight: 800;
+}
+nav.tabs { display: flex; gap: 6px; padding: 12px 16px 0; max-width: 1100px; margin: 0 auto; flex-wrap: wrap; }
+nav.tabs button {
+  border: 1px solid var(--line); border-bottom: none; background: #e9edf8; color: var(--ink);
+  padding: 10px 18px; border-radius: 12px 12px 0 0; font-weight: 700;
+}
+nav.tabs button[aria-selected=true] { background: var(--card); color: var(--brand); }
+main { max-width: 1100px; margin: 0 auto; padding: 0 16px 48px; }
+section.panel { background: var(--card); border: 1px solid var(--line); border-radius: 0 var(--radius) var(--radius) var(--radius); padding: 18px; }
+section[hidden] { display: none; }
+h2 { margin: 0 0 12px; font-size: 1.15rem; }
+.muted { color: var(--muted); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn {
+  border: 1px solid var(--brand); background: var(--brand); color: var(--brand-ink); border-radius: 10px; padding: 8px 16px; font-weight: 700;
+}
+.btn.ghost { background: var(--card); color: var(--brand); }
+.chip { font-size: .8rem; padding: 2px 10px; border-radius: 99px; background: #e9edf8; color: #2f3b8f; font-weight: 600; }
+.grid-topics { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.topic {
+  text-align: left; border: 2px solid var(--line); background: var(--card); color: var(--ink); border-radius: 12px; padding: 12px;
+}
+.topic[aria-pressed=true] { border-color: var(--brand); background: #eef0ff; }
+.topic .ico { font-size: 1.6rem; display: block; }
+.theory-box { background: #eef0ff; border-left: 5px solid var(--brand); border-radius: 10px; padding: 14px 16px; }
+.layout { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 860px) { .layout { grid-template-columns: minmax(0, 1fr); } .toggles { margin-left: 0; } }
+.layout > *, .card, main, section.panel { min-width: 0; }
+.card { border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; background: var(--card); }
+.statement { font-size: 1.08rem; margin: 10px 0 14px; overflow-wrap: anywhere; }
+.statement p { margin: 0 0 .6em; }
+.steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.steps li label { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.steps input { width: 22px; height: 22px; margin-top: 3px; flex: none; accent-color: var(--brand); }
+.steps li.done label { background: var(--ok-bg); text-decoration: line-through; color: var(--muted); }
+.steps li.goal label { background: #eef0ff; border-color: var(--brand); font-weight: 700; }
+.options { display: grid; gap: 8px; }
+.opt {
+  display: flex; gap: 12px; align-items: center; text-align: left; border: 2px solid var(--line); background: var(--card); color: var(--ink);
+  border-radius: 12px; padding: 10px 14px; font-weight: 600;
+}
+.opt b { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: #e9edf8; color: #2f3b8f; flex: none; }
+.opt:hover:not(:disabled) { border-color: var(--brand); }
+.opt.right { border-color: var(--ok); background: var(--ok-bg); opacity: 1; }
+.opt.wrong { border-color: var(--bad); background: var(--bad-bg); opacity: 1; }
+.feedback { margin-top: 12px; padding: 10px 14px; border-radius: 10px; font-weight: 700; }
+.feedback.ok { background: var(--ok-bg); color: var(--ok); }
+.feedback.bad { background: var(--bad-bg); color: var(--bad); }
+.feedback.info { background: #eef0ff; color: #2f3b8f; }
+.copilot h2 { display: flex; align-items: center; gap: 8px; }
+.quick { display: grid; gap: 8px; margin-bottom: 12px; }
+.ask { display: flex; gap: 8px; margin-bottom: 4px; }
+.ask input { flex: 1; min-width: 0; }
+.counter { font-size: .78rem; color: var(--muted); text-align: right; margin-bottom: 8px; }
+.log { display: grid; gap: 10px; }
+.ai { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: #fafbff; overflow-wrap: anywhere; }
+.ai.user { background: #eef0ff; margin-left: 24px; }
+.ai .kind { font-size: .75rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--brand); margin-bottom: 4px; }
+.ai .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.badge { font-size: .76rem; font-weight: 700; padding: 2px 9px; border-radius: 99px; background: #e9edf8; color: #2f3b8f; }
+.badge.ok { background: var(--ok-bg); color: var(--ok); }
+.badge.warn { background: var(--warn-bg); color: var(--warn); }
+.guard-note { margin-top: 8px; font-size: .9rem; padding: 8px 10px; border-radius: 8px; background: var(--warn-bg); color: #5a3d00; border: 1px solid #e8c36a; }
+.thinking { color: var(--muted); font-style: italic; }
+.thinking::after { content: ""; display: inline-block; width: 1ch; animation: dots 1.2s steps(4) infinite; }
+@keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+.pomo { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 0; padding: 10px 14px; background: #fff3e6; border: 1px solid #f0c9a0; border-radius: 12px; }
+.pomo .time { font-size: 1.6rem; font-weight: 800; font-variant-numeric: tabular-nums; min-width: 4.5ch; }
+.pomo.ring { animation: ring 0.6s 4; }
+@keyframes ring { 50% { background: #ffd9a8; } }
+svg.calc { width: 100%; height: auto; display: block; margin-top: 14px; }
+.calc-note { margin-top: 12px; font-size: .9rem; color: var(--muted); }
+.bar { display: grid; grid-template-columns: 130px 1fr 40px; gap: 8px; align-items: center; margin: 6px 0; }
+.bar .track { background: #e9edf8; border-radius: 6px; height: 18px; overflow: hidden; }
+.bar .fill { background: var(--bad); height: 100%; border-radius: 6px; min-width: 2px; }
+.stats { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+.stat { background: #eef0ff; border-radius: 12px; padding: 8px 14px; }
+.stat b { display: block; font-size: 1.3rem; }
+.progress { height: 10px; border-radius: 99px; background: #e9edf8; overflow: hidden; margin: 8px 0 12px; }
+.progress > div { height: 100%; background: var(--brand); transition: width .3s; }
+dialog { border: none; border-radius: 18px; padding: 22px; max-width: 460px; width: calc(100% - 32px); background: var(--card); color: var(--ink); }
+dialog::backdrop { background: rgba(20, 25, 45, .55); }
+.avatars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 14px 0; }
+.av { aspect-ratio: 1; display: grid; place-items: center; font-size: 2rem; border-radius: 14px; border: 2px solid var(--line); background: #f4f6fb; padding: 0; color: var(--ink); }
+.av.locked { filter: grayscale(1); opacity: .45; }
+.av.sel { border-color: var(--brand); background: #eef0ff; }
+.reveal { text-align: center; font-size: 4rem; animation: pop .5s ease; }
+@keyframes pop { 0% { transform: scale(.2) rotate(-20deg); } 70% { transform: scale(1.25); } 100% { transform: scale(1); } }
+.sr { position: absolute; left: -9999px; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">🧮 studIA <span class="pill" id="status">…</span></div>
+  <label><span data-i18n="language">Idioma</span>
+    <select id="lang"><option value="cat">Català</option><option value="esp">Español</option><option value="eng">English</option></select></label>
+  <label><span data-i18n="level">Nivel</span>
+    <select id="level"></select></label>
+  <div class="toggles" role="group" aria-label="Accessibility">
+    <button class="toggle" id="t-tdah" aria-pressed="false"></button>
+    <button class="toggle" id="t-dys" aria-pressed="false"></button>
+    <button class="toggle" id="t-calc" aria-pressed="false"></button>
+  </div>
+  <button class="coins" id="coinsBtn" aria-haspopup="dialog">🪙 <span id="coins">0</span> <span id="avatarNow"></span></button>
+</header>
+
+<div id="pomodoro" class="pomo" hidden style="max-width:1068px;margin:12px auto 0">
+  <span aria-hidden="true">🍅</span><strong data-i18n="pomodoro">Pomodoro</strong>
+  <span class="time" id="pomoTime" role="timer">25:00</span>
+  <select id="pomoMin" aria-label="minutes"><option value="1">1 min</option><option value="5">5 min</option><option value="15">15 min</option><option value="25" selected>25 min</option></select>
+  <button class="btn" id="pomoStart"></button>
+  <button class="btn ghost" id="pomoReset">↺</button>
+  <span class="muted" id="pomoMsg" aria-live="polite"></span>
+</div>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" id="tab-learn" aria-selected="false" data-tab="learn"></button>
+  <button role="tab" id="tab-practice" aria-selected="true" data-tab="practice"></button>
+  <button role="tab" id="tab-test" aria-selected="false" data-tab="test"></button>
+</nav>
+
+<main>
+  <!-- 1. APRENDER -->
+  <section class="panel" id="learn" role="tabpanel" hidden>
+    <h2 data-i18n="learnTitle"></h2>
+    <div class="grid-topics" id="topicGrid"></div>
+    <div class="theory-box" id="theoryBox"></div>
+    <p><button class="btn" id="practiceTopic"></button></p>
+  </section>
+
+  <!-- 2. PRACTICAR -->
+  <section class="panel" id="practice" role="tabpanel">
+    <div class="row" style="margin-bottom:12px">
+      <label class="muted"><span data-i18n="topic"></span>
+        <select id="topicSel"></select></label>
+      <button class="btn ghost" id="newProblem"></button>
+    </div>
+    <div class="layout">
+      <div class="card" id="pCard"><p class="thinking" data-i18n="loading"></p></div>
+      <div class="card copilot">
+        <h2>🤖 <span data-i18n="copilot"></span></h2>
+        <div class="quick">
+          <button class="btn ghost" id="bTheory"></button>
+          <button class="btn ghost" id="bSimilar"></button>
+          <button class="btn ghost" id="bHint"></button>
+        </div>
+        <form class="ask" id="askForm">
+          <input type="text" id="askInput" maxlength="80" autocomplete="off" aria-label="question">
+          <button class="btn" id="askBtn" type="submit"></button>
+        </form>
+        <div class="counter"><span id="askCount">0</span>/80</div>
+        <div class="log" id="log" aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. TEST -->
+  <section class="panel" id="test" role="tabpanel" hidden>
+    <div id="testIntro">
+      <h2 data-i18n="testTitle"></h2>
+      <p class="muted" data-i18n="testIntro"></p>
+      <button class="btn" id="testStart"></button>
+    </div>
+    <div id="testRun" hidden>
+      <div class="row"><span class="chip" id="testLevel"></span><span class="muted" id="testCount"></span></div>
+      <div class="progress"><div id="testBar" style="width:0"></div></div>
+      <div class="card" id="tCard"></div>
+      <div id="tFeedback" aria-live="polite"></div>
+    </div>
+    <div id="testDone" hidden></div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:20px 0">
+    <h2 data-i18n="analytics"></h2>
+    <div id="analytics"></div>
+  </section>
+</main>
+
+<dialog id="gacha" aria-labelledby="gTitle">
+  <h2 id="gTitle">🎰 Gacha</h2>
+  <p id="gInfo" class="muted"></p>
+  <div id="gReveal"></div>
+  <div class="avatars" id="gGrid"></div>
+  <div class="row" style="justify-content:space-between">
+    <button class="btn" id="gPull"></button>
+    <button class="btn ghost" id="gClose"></button>
+  </div>
+</dialog>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------- utilidades ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+function el(tag, attrs, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === false || v == null) continue;
+    if (k === 'class') n.className = v;
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? '' : v);
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) n.append(k instanceof Node ? k : document.createTextNode(String(k)));
+  return n;
+}
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('studia.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('studia.' + k, JSON.stringify(v)); } catch { /* sin almacenamiento */ } },
+};
+async function api(path, body) {
+  const opt = body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+  let r;
+  try { r = await fetch(path, opt); } catch { throw new Error(t('offline')); }
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+  return data;
+}
+const qs = o => Object.entries(o).filter(([, v]) => v !== '' && v != null).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+
+/* ---------- textos de la interfaz ---------- */
+const T = {
+  cat: {
+    language: 'Idioma', level: 'Nivell', topic: 'Tema', allTopics: 'Tots els temes', tdah: 'Pas a pas', dys: 'Frases curtes', calc: 'Suport visual',
+    learn: '1. Aprendre', practice: '2. Practicar', test: '3. Test', learnTitle: 'Tria un tema i repassa la teoria',
+    practiceTopic: 'Practicar aquest tema →', newProblem: '↻ Nou problema', loading: 'Carregant…', copilot: 'Copilot studIA',
+    bTheory: '💡 Teoria del tema', bSimilar: '🔍 Exemple similar (RAG)', bHint: '🤖 Pista Pas 1 (LLM)', ask: 'Preguntar a studIA',
+    askPh: 'Tens un dubte? (màx. 80 caràcters)', thinking: 'studIA està pensant', latency: 'Latència', guardOk: 'Guardrail anti-spoiler: net',
+    guardInj: 'Has demanat la solució directa. studIA no la dóna: només et guia. Aquí tens una pista segura.',
+    guardLeak: 'El model anava a revelar la solució i l\'hem bloquejat. Aquí tens una pista segura.',
+    guardBlocked: 'Guardrail anti-spoiler: BLOQUEJAT', guardNoModel: 'Model no disponible: pista de reserva.',
+    theoryKind: 'Teoria', similarKind: 'Exemple similar', hintKind: 'Pista', doubtKind: 'Dubte', explainKind: 'Per què no',
+    answerWas: 'Resposta', noExample: 'No he trobat cap exemple similar.', similarity: 'similitud',
+    correct: '🎉 Correcte!', wrong: 'Ho tornes a provar? Aquesta no és.', next: 'Següent problema →', noProblems: 'No hi ha problemes amb aquests filtres.',
+    offline: 'No puc connectar amb el servidor.', pomodoro: 'Pomodoro', start: '▶ Començar', pause: '⏸ Pausa', pomoDone: 'Descans! 🎉',
+    pomoGo: 'Concentra\'t!', calcNote: 'Les opcions no són quantitats senzilles: no es poden dibuixar.', calcTitle: 'Comparació visual de les opcions',
+    testTitle: 'Repte adaptatiu', testIntro: 'Sense pistes. Si encertes, el següent problema és d\'un nivell més; si falles, d\'un menys.',
+    testStart: 'Començar el repte', testQ: 'Pregunta', testRight: '✓ Correcte', testWrong: '✗ Incorrecte', testNow: 'Nivell',
+    testDone: 'Repte acabat', testScore: 'Encerts', testAgain: 'Tornar a començar', testNoMore: 'No queden més problemes d\'aquest nivell.',
+    analytics: 'Analítiques', errorsBy: 'Errors per tema', noErrors: 'Cap error registrat. 🎉', attempts: 'Intents', accuracy: 'Precisió', coinsL: 'Monedes',
+    gInfo: 'Cada 30 monedes guanyades = 1 tirada.', gPull: '🎰 Tirar', gClose: 'Tancar', gPulls: 'Tirades disponibles', gNone: 'Encara no tens prou monedes.',
+    gAll: 'Ja tens tots els avatars!', gWon: 'Has guanyat un avatar nou!', checking: 'Comprovant…',
+  },
+  esp: {
+    language: 'Idioma', level: 'Nivel', topic: 'Tema', allTopics: 'Todos los temas', tdah: 'Paso a paso', dys: 'Frases cortas', calc: 'Apoyo visual',
+    learn: '1. Aprender', practice: '2. Practicar', test: '3. Test', learnTitle: 'Elige un tema y repasa la teoría',
+    practiceTopic: 'Practicar este tema →', newProblem: '↻ Nuevo problema', loading: 'Cargando…', copilot: 'Copiloto studIA',
+    bTheory: '💡 Teoría del tema', bSimilar: '🔍 Ejemplo similar (RAG)', bHint: '🤖 Pista Paso 1 (LLM)', ask: 'Preguntar a studIA',
+    askPh: '¿Tienes una duda? (máx. 80 caracteres)', thinking: 'studIA está pensando', latency: 'Latencia', guardOk: 'Guardrail anti-spoiler: limpio',
+    guardInj: 'Has pedido la solución directa. studIA no la da: solo te guía. Aquí tienes una pista segura.',
+    guardLeak: 'El modelo iba a revelar la solución y la hemos bloqueado. Aquí tienes una pista segura.',
+    guardBlocked: 'Guardrail anti-spoiler: BLOQUEADO', guardNoModel: 'Modelo no disponible: pista de reserva.',
+    theoryKind: 'Teoría', similarKind: 'Ejemplo similar', hintKind: 'Pista', doubtKind: 'Duda', explainKind: 'Por qué no',
+    answerWas: 'Respuesta', noExample: 'No he encontrado ningún ejemplo similar.', similarity: 'similitud',
+    correct: '🎉 ¡Correcto!', wrong: '¿Lo intentas otra vez? Esa no es.', next: 'Siguiente problema →', noProblems: 'No hay problemas con esos filtros.',
+    offline: 'No puedo conectar con el servidor.', pomodoro: 'Pomodoro', start: '▶ Empezar', pause: '⏸ Pausa', pomoDone: '¡Descanso! 🎉',
+    pomoGo: '¡Concéntrate!', calcNote: 'Las opciones no son cantidades sencillas: no se pueden dibujar.', calcTitle: 'Comparación visual de las opciones',
+    testTitle: 'Reto adaptativo', testIntro: 'Sin pistas. Si aciertas, el siguiente problema es un nivel más difícil; si fallas, uno más fácil.',
+    testStart: 'Empezar el reto', testQ: 'Pregunta', testRight: '✓ Correcto', testWrong: '✗ Incorrecto', testNow: 'Nivel',
+    testDone: 'Reto terminado', testScore: 'Aciertos', testAgain: 'Volver a empezar', testNoMore: 'No quedan más problemas de ese nivel.',
+    analytics: 'Analíticas', errorsBy: 'Errores por tema', noErrors: 'Ningún error registrado. 🎉', attempts: 'Intentos', accuracy: 'Precisión', coinsL: 'Monedas',
+    gInfo: 'Cada 30 monedas ganadas = 1 tirada.', gPull: '🎰 Tirar', gClose: 'Cerrar', gPulls: 'Tiradas disponibles', gNone: 'Aún no tienes monedas suficientes.',
+    gAll: '¡Ya tienes todos los avatares!', gWon: '¡Has ganado un avatar nuevo!', checking: 'Comprobando…',
+  },
+  eng: {
+    language: 'Language', level: 'Level', topic: 'Topic', allTopics: 'All topics', tdah: 'Step by step', dys: 'Short sentences', calc: 'Visual support',
+    learn: '1. Learn', practice: '2. Practise', test: '3. Test', learnTitle: 'Pick a topic and review the theory',
+    practiceTopic: 'Practise this topic →', newProblem: '↻ New problem', loading: 'Loading…', copilot: 'studIA copilot',
+    bTheory: '💡 Topic theory', bSimilar: '🔍 Similar example (RAG)', bHint: '🤖 Step 1 hint (LLM)', ask: 'Ask studIA',
+    askPh: 'Any doubt? (max. 80 characters)', thinking: 'studIA is thinking', latency: 'Latency', guardOk: 'Anti-spoiler guardrail: clean',
+    guardInj: 'You asked for the answer directly. studIA does not give it: it only guides you. Here is a safe hint.',
+    guardLeak: 'The model was about to reveal the solution and we blocked it. Here is a safe hint.',
+    guardBlocked: 'Anti-spoiler guardrail: BLOCKED', guardNoModel: 'Model unavailable: fallback hint.',
+    theoryKind: 'Theory', similarKind: 'Similar example', hintKind: 'Hint', doubtKind: 'Question', explainKind: 'Why not',
+    answerWas: 'Answer', noExample: 'I could not find a similar example.', similarity: 'similarity',
+    correct: '🎉 Correct!', wrong: 'Try again? That is not it.', next: 'Next problem →', noProblems: 'No problems match these filters.',
+    offline: 'Cannot reach the server.', pomodoro: 'Pomodoro', start: '▶ Start', pause: '⏸ Pause', pomoDone: 'Break time! 🎉',
+    pomoGo: 'Focus!', calcNote: 'The options are not simple quantities, so they cannot be drawn.', calcTitle: 'Visual comparison of the options',
+    testTitle: 'Adaptive challenge', testIntro: 'No hints. If you get it right, the next problem is one level harder; if not, one level easier.',
+    testStart: 'Start the challenge', testQ: 'Question', testRight: '✓ Correct', testWrong: '✗ Wrong', testNow: 'Level',
+    testDone: 'Challenge finished', testScore: 'Correct', testAgain: 'Start again', testNoMore: 'No more problems at that level.',
+    analytics: 'Analytics', errorsBy: 'Errors by topic', noErrors: 'No errors recorded. 🎉', attempts: 'Attempts', accuracy: 'Accuracy', coinsL: 'Coins',
+    gInfo: 'Every 30 coins earned = 1 pull.', gPull: '🎰 Pull', gClose: 'Close', gPulls: 'Pulls available', gNone: 'Not enough coins yet.',
+    gAll: 'You already have every avatar!', gWon: 'You won a new avatar!', checking: 'Checking…',
+  },
+};
+const t = k => (T[S.lang] && T[S.lang][k]) || T.eng[k] || k;
+const TOPIC_ICON = { 'Geometría': '📐', 'Combinatoria': '🎲', 'Lógica': '🧩', 'Aritmética': '➕', 'Patrones': '🔢' };
+const AVATAR_EMOJI = { fox: '🦊', owl: '🦉', cat: '🐱', robot: '🤖', rocket: '🚀', dino: '🦖', panda: '🐼', unicorn: '🦄' };
+
+/* ---------- estado ---------- */
+const S = {
+  lang: store.get('lang', 'cat'), level: store.get('level', 0), topic: '', tab: 'practice',
+  modes: store.get('modes', { tdah: false, dys: false, calc: false }),
+  theory: null, problem: null, wrongSet: new Set(), solved: false, busy: false, progress: null,
+  test: { active: false, n: 0, total: 8, right: 0, level: 0, problem: null, answered: false },
+  avatar: store.get('avatar', null),
+};
+
+/* ---------- textos estáticos ---------- */
+function applyStatic() {
+  document.documentElement.lang = S.lang === 'esp' ? 'es' : S.lang === 'eng' ? 'en' : 'ca';
+  document.querySelectorAll('[data-i18n]').forEach(n => { n.textContent = t(n.dataset.i18n); });
+  const modeName = (k, fb) => (S.theory && S.theory.modes && S.theory.modes[k]) || fb;
+  $('#t-tdah').textContent = '🎯 ' + modeName('text_tdah', t('tdah'));
+  $('#t-dys').textContent = '📖 ' + modeName('text_dyslexia', t('dys'));
+  $('#t-calc').textContent = '📊 ' + t('calc');
+  $('#tab-learn').textContent = t('learn'); $('#tab-practice').textContent = t('practice'); $('#tab-test').textContent = t('test');
+  $('#practiceTopic').textContent = t('practiceTopic'); $('#newProblem').textContent = t('newProblem');
+  $('#bTheory').textContent = t('bTheory'); $('#bSimilar').textContent = t('bSimilar'); $('#bHint').textContent = t('bHint');
+  $('#askBtn').textContent = t('ask'); $('#askInput').placeholder = t('askPh');
+  $('#testStart').textContent = t('testStart');
+  $('#gInfo').textContent = t('gInfo'); $('#gPull').textContent = t('gPull'); $('#gClose').textContent = t('gClose');
+  $('#pomoStart').textContent = pomo.running ? t('pause') : t('start');
+  const sel = $('#level'); const cur = String(S.level);
+  sel.replaceChildren(...[0, 1, 2, 3, 4, 5, 6, 7].map(i => el('option', { value: i }, String(i))));
+  sel.value = cur;
+  const ts = $('#topicSel'); const ct = S.topic;
+  ts.replaceChildren(el('option', { value: '' }, t('allTopics')),
+    ...((S.theory && S.theory.topics) || []).map(x => el('option', { value: x.topic }, x.name)));
+  ts.value = ct;
+}
+
+function applyModes() {
+  document.body.classList.toggle('dys', S.modes.dys);
+  for (const k of ['tdah', 'dys', 'calc']) $('#t-' + k).setAttribute('aria-pressed', String(S.modes[k]));
+  $('#pomodoro').hidden = !S.modes.tdah;
+  store.set('modes', S.modes);
+}
+
+/* ---------- representación del problema ---------- */
+const STEP_RE = /^(Pas|Paso|Step)\s+\d+:\s*/i, GOAL_RE = /^(Objectiu final|Objetivo final|Final goal):\s*/i;
+const stripNo = s => String(s || '').replace(/^\s*\d+\.\s+/, '');
+
+function statementNode(p) {
+  const box = el('div', { class: 'statement' });
+  if (S.modes.tdah && p.text_tdah) {
+    const lines = p.text_tdah.split('\n').map(s => s.trim()).filter(Boolean);
+    if (lines.some(l => STEP_RE.test(l))) {
+      const ul = el('ul', { class: 'steps' });
+      lines.forEach((line, i) => {
+        const goal = GOAL_RE.test(line);
+        const m = line.match(goal ? GOAL_RE : STEP_RE);
+        const li = el('li', { class: goal ? 'goal' : '' });
+        const cb = el('input', { type: 'checkbox', id: 'st' + i, onchange: () => li.classList.toggle('done', cb.checked) });
+        const label = el('label', { for: 'st' + i }, cb, el('span', {}, m ? el('b', {}, m[0]) : '', m ? line.slice(m[0].length) : line));
+        li.append(label); ul.append(li);
+      });
+      box.append(ul); return box;
+    }
+  }
+  const src = S.modes.dys && p.text_dyslexia ? p.text_dyslexia : stripNo(p.text || p.original_text);
+  const parts = S.modes.dys ? src.split(/\n{2,}/) : [src];
+  parts.forEach(x => box.append(el('p', {}, x)));
+  return box;
+}
+
+function optionsNode(p, onPick) {
+  const wrap = el('div', { class: 'options', role: 'group' });
+  Object.keys(p.options).sort().forEach(letter => {
+    wrap.append(el('button', { class: 'opt', 'data-letter': letter, onclick: () => onPick(letter) }, el('b', {}, letter), el('span', {}, String(p.options[letter]))));
+  });
+  return wrap;
+}
+
+function numberOf(str) {
+  const m = String(str).replace(/\s+/g, ' ').match(/-?\d+(?:[.,]\d+)?(?:\s?\/\s?\d+)?/);
+  if (!m) return null;
+  let s = m[0];
+  if (s.includes('/')) { const [a, b] = s.split('/').map(x => parseFloat(x.replace(',', '.'))); return b ? a / b : null; }
+  return parseFloat(s.replace(',', '.'));
+}
+
+function calcNode(p) {
+  const letters = Object.keys(p.options).sort();
+  const vals = letters.map(l => numberOf(p.options[l]));
+  if (!letters.length || vals.some(v => v === null || !isFinite(v))) return el('div', { class: 'calc-note' }, t('calcNote'));
+  const NS = 'http://www.w3.org/2000/svg';
+  const mk = (tag, a) => { const n = document.createElementNS(NS, tag); for (const k in a) n.setAttribute(k, a[k]); return n; };
+  const colors = ['#3f51d6', '#c2410c', '#0f766e', '#a21caf', '#4d7c0f'];
+  const max = Math.max(...vals.map(Math.abs)) || 1;
+  const blocks = vals.every(v => Number.isInteger(v) && v >= 0 && v <= 20) && max > 0;
+  const rowH = blocks ? 34 : 38, W = 640, labelW = 120, H = letters.length * rowH + 8;
+  const svg = mk('svg', { class: 'calc', viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': t('calcTitle') });
+  const title = mk('title', {}); title.textContent = t('calcTitle'); svg.append(title);
+  letters.forEach((l, i) => {
+    const y = 4 + i * rowH, c = colors[i % colors.length], v = vals[i];
+    const lab = mk('text', { x: 4, y: y + 22, 'font-size': 16, 'font-weight': 700, fill: 'currentColor' });
+    lab.textContent = `${l}) ${String(p.options[l]).slice(0, 14)}`; svg.append(lab);
+    if (blocks) {
+      for (let k = 0; k < v; k++) svg.append(mk('rect', { x: labelW + 20 + k * 22 + Math.floor(k / 5) * 8, y: y + 4, width: 18, height: 22, rx: 4, fill: c }));
+    } else {
+      const w = Math.max(3, Math.abs(v) / max * (W - labelW - 70));
+      svg.append(mk('rect', { x: labelW + 20, y: y + 4, width: w, height: 24, rx: 6, fill: c }));
+      const val = mk('text', { x: labelW + 28 + w, y: y + 22, 'font-size': 14, fill: 'currentColor' }); val.textContent = String(v); svg.append(val);
+    }
+  });
+  return svg;
+}
+
+function problemMeta(p) {
+  const topic = ((S.theory && S.theory.topics) || []).find(x => x.topic === p.topic);
+  return el('div', { class: 'row' }, el('span', { class: 'chip' }, '#' + p.id), el('span', { class: 'chip' }, t('level') + ' ' + p.level),
+    topic ? el('span', { class: 'chip' }, (TOPIC_ICON[p.topic] || '') + ' ' + topic.name) : null);
+}
+
+/* ---------- PRACTICAR ---------- */
+function renderPractice() {
+  const p = S.problem, card = $('#pCard');
+  if (!p) return;
+  const done = S.solved;
+  const opts = optionsNode(p, pickPractice);
+  opts.querySelectorAll('.opt').forEach(b => {
+    if (S.wrongSet.has(b.dataset.letter)) { b.classList.add('wrong'); b.disabled = true; }
+    if (done) b.disabled = true;
+    if (done && b.dataset.letter === S.solved) b.classList.add('right');
+  });
+  card.replaceChildren(problemMeta(p), statementNode(p), opts, S.modes.calc ? calcNode(p) : '', el('div', { id: 'pFeedback', 'aria-live': 'polite' }));
+  if (S.feedback) showFeedback(S.feedback.kind, S.feedback.text, S.feedback.next);
+}
+
+function showFeedback(kind, text, withNext) {
+  S.feedback = { kind, text, next: withNext };
+  const box = $('#pFeedback'); if (!box) return;
+  box.replaceChildren(el('div', { class: 'feedback ' + kind }, text),
+    withNext ? el('p', {}, el('button', { class: 'btn', onclick: () => loadPractice(true) }, t('next'))) : '');
+}
+
+async function loadPractice(fresh, keepId) {
+  S.wrongSet = new Set(); S.solved = false; S.feedback = null;
+  $('#log').replaceChildren();
+  $('#pCard').replaceChildren(el('p', { class: 'thinking' }, t('loading')));
+  try {
+    const q = keepId && S.problem
+      ? { id: S.problem.id, language: S.lang, mode: 'practice' }
+      : { language: S.lang, level: S.level, topic: S.topic, mode: 'practice', skip: S.problem && S.problem.id };
+    S.problem = await api('/api/problem?' + qs(q));
+    renderPractice();
+  } catch (e) {
+    S.problem = null;
+    $('#pCard').replaceChildren(el('div', { class: 'feedback bad' }, e.message.includes('filtros') || e.message.includes('filters') ? t('noProblems') : e.message));
+  }
+}
+
+async function pickPractice(letter) {
+  if (!S.problem || S.solved || S.busy) return;
+  S.busy = true;
+  showFeedback('info', t('checking'));
+  try {
+    const r = await api('/api/check', { problem_id: S.problem.id, language: S.lang, choice: letter, mode: 'practice' });
+    if (r.correct) {
+      S.solved = letter;
+      renderPractice();
+      showFeedback('ok', t('correct') + (r.coins_earned ? `  +${r.coins_earned} 🪙` : ''), true);
+    } else {
+      S.wrongSet.add(letter);
+      renderPractice();
+      showFeedback('bad', t('wrong'));
+      if (r.explanation) addAi('explain', r.explanation);
+    }
+    refreshProgress();
+  } catch (e) { showFeedback('bad', e.message); } finally { S.busy = false; }
+}
+
+/* ---------- panel del copiloto ---------- */
+function setCopilotBusy(on) {
+  ['#bTheory', '#bSimilar', '#bHint', '#askBtn', '#askInput'].forEach(s => { $(s).disabled = on; });
+}
+function guardBlock(r) {
+  const noModel = r.status && r.status.startsWith('error');
+  const badges = [];
+  if (r.seconds != null) badges.push(el('span', { class: 'badge' }, `⏱ ${t('latency')}: ${Number(r.seconds).toFixed(1)} s`));
+  if (r.leaked_and_blocked) badges.push(el('span', { class: 'badge warn' }, '🛡️ ' + t('guardBlocked') + (r.block_reason ? ` (${r.block_reason})` : '')));
+  else if (noModel) badges.push(el('span', { class: 'badge warn' }, '⚠️ ' + t('guardNoModel')));
+  else badges.push(el('span', { class: 'badge ok' }, '🛡️ ' + t('guardOk')));
+  const note = r.leaked_and_blocked
+    ? el('div', { class: 'guard-note' }, r.block_reason === 'injection' ? t('guardInj') : t('guardLeak')) : null;
+  return [el('div', { class: 'meta' }, badges), note];
+}
+function addAi(kind, r, question) {
+  const log = $('#log');
+  if (question) log.prepend(el('div', { class: 'ai user' }, el('div', { class: 'kind' }, t('doubtKind')), question));
+  const kinds = { hint: 'hintKind', doubt: 'hintKind', explain: 'explainKind' };
+  log.prepend(el('div', { class: 'ai' }, el('div', { class: 'kind' }, '🤖 ' + t(kinds[kind] || 'hintKind')), r.text, ...guardBlock(r)));
+  while (log.children.length > 8) log.lastChild.remove();
+}
+async function withThinking(fn) {
+  if (!S.problem || S.busy) return;
+  S.busy = true; setCopilotBusy(true);
+  const log = $('#log');
+  const wait = el('div', { class: 'ai thinking' }, t('thinking'));
+  log.prepend(wait);
+  try { await fn(); } catch (e) { log.prepend(el('div', { class: 'ai' }, el('div', { class: 'feedback bad' }, e.message))); }
+  finally { wait.remove(); S.busy = false; setCopilotBusy(false); }
+}
+$('#bTheory').onclick = () => {
+  if (!S.problem || !S.theory) return;
+  const x = S.theory.topics.find(y => y.topic === S.problem.topic);
+  if (x) $('#log').prepend(el('div', { class: 'ai' }, el('div', { class: 'kind' }, `📘 ${t('theoryKind')}: ${x.name}`), x.content));
+};
+$('#bSimilar').onclick = () => withThinking(async () => {
+  const r = await api('/api/similar?' + qs({ problem_id: S.problem.id, language: S.lang, mode: 'practice' }));
+  const meta = el('div', { class: 'meta' }, el('span', { class: 'badge' }, `⏱ ${t('latency')}: ${Number(r.seconds).toFixed(2)} s`),
+    r.similarity != null ? el('span', { class: 'badge' }, `${t('similarity')} ${Number(r.similarity).toFixed(2)}`) : null);
+  if (!r.example) { $('#log').prepend(el('div', { class: 'ai' }, t('noExample'), meta)); return; }
+  const ex = r.example;
+  const opts = Object.keys(ex.options || {}).sort().map(l => el('div', {}, `${l}) ${ex.options[l]}`));
+  $('#log').prepend(el('div', { class: 'ai' }, el('div', { class: 'kind' }, `🔍 ${t('similarKind')} · ${t('level')} ${ex.level}`),
+    el('div', {}, stripNo(ex.text)), el('div', { class: 'muted', style: 'margin:6px 0' }, opts),
+    el('div', {}, el('b', {}, `${t('answerWas')}: ${ex.answer}) ${ex.answer_text}`)), meta));
+});
+async function askLlm(question) {
+  await withThinking(async () => {
+    const r = await api('/api/hint', { problem_id: S.problem.id, language: S.lang, question: question || null, mode: 'practice' });
+    addAi(question ? 'doubt' : 'hint', r, question);
+  });
+}
+$('#bHint').onclick = () => askLlm(null);
+$('#askForm').onsubmit = e => {
+  e.preventDefault();
+  const q = $('#askInput').value.trim().slice(0, 80);
+  if (!q) return;
+  $('#askInput').value = ''; $('#askCount').textContent = '0';
+  askLlm(q);
+};
+$('#askInput').oninput = e => { $('#askCount').textContent = String(e.target.value.length); };
+$('#newProblem').onclick = () => loadPractice(true);
+$('#topicSel').onchange = e => { S.topic = e.target.value; loadPractice(true); };
+
+/* ---------- APRENDER ---------- */
+function renderLearn() {
+  const grid = $('#topicGrid'), box = $('#theoryBox');
+  if (!S.theory) return;
+  const cur = S.topic || S.theory.topics[0].topic;
+  grid.replaceChildren(...S.theory.topics.map(x => el('button', {
+    class: 'topic', 'aria-pressed': String(x.topic === cur),
+    onclick: () => { S.topic = x.topic; $('#topicSel').value = x.topic; renderLearn(); },
+  }, el('span', { class: 'ico', 'aria-hidden': 'true' }, TOPIC_ICON[x.topic] || '📚'), el('b', {}, x.name))));
+  const sel = S.theory.topics.find(x => x.topic === cur);
+  box.replaceChildren(el('b', {}, `${TOPIC_ICON[cur] || ''} ${sel.name}`), el('p', { style: 'margin:.5em 0 0' }, sel.content));
+}
+$('#practiceTopic').onclick = () => {
+  if (!S.topic && S.theory) S.topic = S.theory.topics[0].topic;
+  $('#topicSel').value = S.topic; switchTab('practice'); loadPractice(true);
+};
+
+/* ---------- TEST ---------- */
+function testShow(which) {
+  $('#testIntro').hidden = which !== 'intro'; $('#testRun').hidden = which !== 'run'; $('#testDone').hidden = which !== 'done';
+}
+async function testStart() {
+  Object.assign(S.test, { active: true, n: 0, right: 0, level: S.level, problem: null, answered: false });
+  testShow('run'); $('#tFeedback').replaceChildren();
+  try {
+    S.test.problem = await api('/api/problem?' + qs({ language: S.lang, level: S.level, mode: 'test' }));
+    renderTest();
+  } catch (e) { testShow('intro'); $('#testIntro').append(el('div', { class: 'feedback bad' }, e.message)); }
+}
+function renderTest() {
+  const T_ = S.test, p = T_.problem; if (!p) return;
+  $('#testLevel').textContent = `${t('testNow')} ${p.level}`;
+  $('#testCount').textContent = `${t('testQ')} ${T_.n + 1}/${T_.total}`;
+  $('#testBar').style.width = (T_.n / T_.total * 100) + '%';
+  const opts = optionsNode(p, pickTest);
+  opts.querySelectorAll('.opt').forEach(b => { b.disabled = T_.answered; });
+  $('#tCard').replaceChildren(problemMeta(p), statementNode(p), opts, S.modes.calc ? calcNode(p) : '');
+}
+async function pickTest(letter) {
+  const T_ = S.test; if (T_.answered || !T_.problem) return;
+  T_.answered = true; renderTest();
+  try {
+    const r = await api('/api/check', { problem_id: T_.problem.id, language: S.lang, choice: letter, mode: 'test' });
+    if (r.correct) T_.right++;
+    T_.n++;
+    $('#testBar').style.width = (T_.n / T_.total * 100) + '%';
+    $('#tFeedback').replaceChildren(el('div', { class: 'feedback ' + (r.correct ? 'ok' : 'bad') }, r.correct ? t('testRight') : t('testWrong')));
+    refreshProgress();
+    const nxt = r.next;
+    if (T_.n >= T_.total || !nxt) { setTimeout(() => testFinish(!nxt && T_.n < T_.total), 900); return; }
+    setTimeout(() => {
+      T_.problem = nxt.problem; T_.level = nxt.target_level; T_.answered = false;
+      $('#tFeedback').replaceChildren(); renderTest();
+    }, 1000);
+  } catch (e) { T_.answered = false; renderTest(); $('#tFeedback').replaceChildren(el('div', { class: 'feedback bad' }, e.message)); }
+}
+function testFinish(ranOut) {
+  S.test.active = false; testShow('done');
+  $('#testDone').replaceChildren(el('h2', {}, '🏁 ' + t('testDone')),
+    el('div', { class: 'stats' }, el('div', { class: 'stat' }, t('testScore'), el('b', {}, `${S.test.right}/${S.test.n}`)),
+      el('div', { class: 'stat' }, t('testNow'), el('b', {}, String(S.test.level)))),
+    ranOut ? el('p', { class: 'muted' }, t('testNoMore')) : '',
+    el('button', { class: 'btn', onclick: () => { testShow('intro'); } }, t('testAgain')));
+  refreshProgress();
+}
+$('#testStart').onclick = testStart;
+
+/* ---------- progreso, analíticas y gacha ---------- */
+async function refreshProgress() {
+  try { S.progress = await api('/api/progress'); } catch { return; }
+  const p = S.progress;
+  $('#coins').textContent = p.coins;
+  const own = S.avatar && p.avatars.includes(S.avatar) ? S.avatar : p.avatars[p.avatars.length - 1];
+  $('#avatarNow').textContent = own ? AVATAR_EMOJI[own] || '🎭' : '';
+  renderAnalytics(); renderGacha();
+}
+function renderAnalytics() {
+  const p = S.progress, box = $('#analytics'); if (!p) return;
+  const names = {}; ((S.theory && S.theory.topics) || []).forEach(x => { names[x.topic] = x.name; });
+  const topics = Object.keys(names).length ? Object.keys(names) : Object.keys(p.errors_by_topic);
+  const max = Math.max(1, ...topics.map(k => p.errors_by_topic[k] || 0));
+  const acc = p.attempts ? Math.round(100 * p.correct / p.attempts) : 0;
+  const total = Object.values(p.errors_by_topic).reduce((a, b) => a + b, 0);
+  box.replaceChildren(
+    el('div', { class: 'stats' },
+      el('div', { class: 'stat' }, t('attempts'), el('b', {}, String(p.attempts))),
+      el('div', { class: 'stat' }, t('accuracy'), el('b', {}, p.attempts ? acc + '%' : '–')),
+      el('div', { class: 'stat' }, t('testNow'), el('b', {}, String(p.current_level))),
+      el('div', { class: 'stat' }, t('coinsL'), el('b', {}, '🪙 ' + p.coins))),
+    el('h3', { style: 'margin:12px 0 4px;font-size:1rem' }, t('errorsBy')),
+    total ? el('div', {}, topics.map(k => {
+      const n = p.errors_by_topic[k] || 0;
+      return el('div', { class: 'bar' }, el('span', {}, (TOPIC_ICON[k] || '') + ' ' + (names[k] || k)),
+        el('div', { class: 'track' }, el('div', { class: 'fill', style: `width:${n / max * 100}%` })), el('b', {}, String(n)));
+    })) : el('p', { class: 'muted' }, t('noErrors')));
+}
+function renderGacha() {
+  const p = S.progress; if (!p) return;
+  $('#gGrid').replaceChildren(...p.all_avatars.map(id => {
+    const have = p.avatars.includes(id);
+    return el('button', {
+      class: 'av' + (have ? '' : ' locked') + (S.avatar === id ? ' sel' : ''), disabled: !have, 'aria-label': id,
+      onclick: () => { S.avatar = id; store.set('avatar', id); refreshProgress(); },
+    }, have ? AVATAR_EMOJI[id] || '🎭' : '❓');
+  }));
+  $('#gInfo').textContent = `${t('gInfo')} ${t('gPulls')}: ${p.pulls} · 🪙 ${p.coins}`;
+  $('#gPull').disabled = p.pulls <= 0 || p.avatars.length >= p.all_avatars.length;
+}
+$('#coinsBtn').onclick = () => { $('#gReveal').replaceChildren(); renderGacha(); $('#gacha').showModal(); };
+$('#gClose').onclick = () => $('#gacha').close();
+$('#gPull').onclick = async () => {
+  try {
+    const r = await api('/api/gacha', {});
+    S.avatar = r.avatar; store.set('avatar', r.avatar);
+    $('#gReveal').replaceChildren(el('div', { class: 'reveal', role: 'img', 'aria-label': r.avatar }, AVATAR_EMOJI[r.avatar] || '🎭'), el('p', { style: 'text-align:center' }, t('gWon')));
+    refreshProgress();
+  } catch (e) { $('#gReveal').replaceChildren(el('div', { class: 'feedback bad' }, e.message)); }
+};
+
+/* ---------- Pomodoro (modo TDAH) ---------- */
+const pomo = { running: false, left: 25 * 60, timer: null };
+function pomoDraw() {
+  const m = Math.floor(pomo.left / 60), s = pomo.left % 60;
+  $('#pomoTime').textContent = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  $('#pomoStart').textContent = pomo.running ? t('pause') : t('start');
+}
+function pomoEvent(payload) { api('/api/event', { event: 'pomodoro', payload }).catch(() => {}); }
+function pomoReset() {
+  clearInterval(pomo.timer); pomo.running = false; pomo.left = Number($('#pomoMin').value) * 60; $('#pomoMsg').textContent = ''; pomoDraw();
+}
+$('#pomoMin').onchange = pomoReset;
+$('#pomoReset').onclick = pomoReset;
+$('#pomoStart').onclick = () => {
+  if (pomo.running) { clearInterval(pomo.timer); pomo.running = false; pomoDraw(); return; }
+  if (pomo.left <= 0) pomoReset();
+  pomo.running = true; $('#pomoMsg').textContent = t('pomoGo');
+  pomoEvent({ action: 'start', minutes: Number($('#pomoMin').value) });
+  pomo.timer = setInterval(() => {
+    pomo.left--; pomoDraw();
+    if (pomo.left <= 0) {
+      clearInterval(pomo.timer); pomo.running = false; $('#pomoMsg').textContent = t('pomoDone');
+      $('#pomodoro').classList.add('ring'); setTimeout(() => $('#pomodoro').classList.remove('ring'), 2500);
+      pomoEvent({ action: 'end' }); pomoDraw();
+    }
+  }, 1000);
+  pomoDraw();
+};
+
+/* ---------- pestañas, filtros, idioma ---------- */
+function switchTab(tab) {
+  S.tab = tab;
+  document.querySelectorAll('[role=tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+  ['learn', 'practice', 'test'].forEach(id => { $('#' + id).hidden = id !== tab; });
+  if (tab === 'learn') renderLearn();
+  if (tab === 'test') refreshProgress();
+}
+document.querySelectorAll('[role=tab]').forEach(b => { b.onclick = () => switchTab(b.dataset.tab); });
+
+function rerender() {
+  if (S.problem) renderPractice();
+  if (S.test.problem && !$('#testRun').hidden) renderTest();
+}
+for (const k of ['tdah', 'dys', 'calc']) {
+  $('#t-' + k).onclick = () => {
+    S.modes[k] = !S.modes[k]; applyModes(); rerender();
+    if (k === 'calc' && S.modes.calc) api('/api/event', { event: 'dyscalculia', payload: { on: true } }).catch(() => {});
+  };
+}
+$('#level').onchange = e => { S.level = Number(e.target.value); store.set('level', S.level); if (S.tab === 'practice') loadPractice(true); };
+$('#lang').onchange = async e => {
+  S.lang = e.target.value; store.set('lang', S.lang);
+  await loadTheory(); applyStatic(); renderLearn(); renderAnalytics();
+  if (S.tab === 'practice' && S.problem) loadPractice(true, true);
+  if (S.test.problem && !$('#testRun').hidden) {
+    try { S.test.problem = await api('/api/problem?' + qs({ id: S.test.problem.id, language: S.lang, mode: 'test' })); renderTest(); } catch { /* se queda como estaba */ }
+  }
+};
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
+  const l = e.key.toUpperCase();
+  if (!'ABCDE'.includes(l) || l.length !== 1) return;
+  const root = S.tab === 'practice' ? $('#pCard') : S.tab === 'test' ? $('#tCard') : null;
+  const b = root && root.querySelector(`.opt[data-letter="${l}"]`);
+  if (b && !b.disabled) b.click();
+});
+
+async function loadTheory() { S.theory = await api('/api/theory?' + qs({ language: S.lang })); }
+
+async function init() {
+  $('#lang').value = S.lang;
+  applyModes(); applyStatic(); pomoDraw();
+  try {
+    const st = await api('/api/status');
+    const pill = $('#status');
+    pill.textContent = st.mock ? 'MOCK' : st.llm ? 'LLM ✓' : 'LLM ✗';
+    pill.className = 'pill ' + (st.mock ? 'mock' : st.llm ? 'up' : 'down');
+    await loadTheory();
+    const pr = await api('/api/progress');
+    if (store.get('level', null) === null) S.level = pr.current_level;
+    S.topic = ''; applyStatic(); $('#level').value = String(S.level);
+    refreshProgress(); renderLearn();
+    await loadPractice(true);
+  } catch (e) { $('#pCard').replaceChildren(el('div', { class: 'feedback bad' }, e.message)); }
+}
+init();
+})();
+</script>
+</body>
+</html>
