@@ -198,7 +198,7 @@ def _check_spoiler_leakage(problem, text):
                 return True, "letter"
     value = _norm((problem.get("options") or {}).get(label, ""))
     if value:
-        statement = problem.get("text", "")
+        statement = re.sub(r"^\s*\d+\.\s+", "", problem.get("text", ""))  # sin el número del problema
         needs_cue = bool(_value_pattern(value).search(statement)) or len(value) == 1
         for m in _value_pattern(value).finditer(text):
             before = text[max(0, m.start() - 25):m.start()]
