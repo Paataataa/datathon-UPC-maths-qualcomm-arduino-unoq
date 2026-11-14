@@ -1,0 +1,5 @@
+name: studIA matrix
+icon: 🧮
+description: Matriz LED del tutor studIA (acierto, fallo, pensar, pomodoro y gacha)
+bricks:
+  - arduino:web_ui

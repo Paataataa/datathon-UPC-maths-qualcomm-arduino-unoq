@@ -60,6 +60,13 @@ class DBManager:
                 PRIMARY KEY (student_id, avatar_id),
                 FOREIGN KEY (student_id) REFERENCES students(id)
             );
+            CREATE TABLE IF NOT EXISTS equipped (
+                student_id INTEGER NOT NULL,
+                slot TEXT NOT NULL,
+                item_id TEXT NOT NULL,
+                PRIMARY KEY (student_id, slot),
+                FOREIGN KEY (student_id) REFERENCES students(id)
+            );
             CREATE TABLE IF NOT EXISTS attempts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 student_id INTEGER NOT NULL,
@@ -331,6 +338,36 @@ class DBManager:
             cur = con.execute("UPDATE students SET coins=coins+? WHERE id=?", (amount, student_id))
             if cur.rowcount == 0:
                 raise ValueError("Alumno inexistente")
+
+    def spend_coins(self, student_id, amount):
+        """Resta monedas de forma atómica: nunca deja el saldo en negativo."""
+        if not isinstance(amount, int) or amount <= 0:
+            raise ValueError("Las monedas gastadas deben ser un entero positivo")
+        with self._connect(self.users_path) as con:
+            changed = con.execute(
+                "UPDATE students SET coins=coins-? WHERE id=? AND coins>=?",
+                (amount, student_id, amount)).rowcount
+        if changed == 0:
+            if self.get_student(student_id) is None:
+                raise ValueError("Alumno inexistente")
+            raise ValueError("Monedas insuficientes")
+
+    def equip(self, student_id, slot, item_id):
+        """Equipa un objeto desbloqueado en un hueco (avatar, tema...). None lo vacía."""
+        if not slot or not slot.strip():
+            raise ValueError("Hueco vacío")
+        if item_id is not None and item_id not in self.get_avatars(student_id):
+            raise ValueError("Objeto no desbloqueado")
+        with self._connect(self.users_path) as con:
+            if item_id is None:
+                con.execute("DELETE FROM equipped WHERE student_id=? AND slot=?", (student_id, slot))
+            else:
+                con.execute("INSERT OR REPLACE INTO equipped VALUES(?,?,?)", (student_id, slot, item_id))
+
+    def get_equipped(self, student_id):
+        with self._connect(self.users_path) as con:
+            return dict(con.execute(
+                "SELECT slot, item_id FROM equipped WHERE student_id=?", (student_id,)))
 
     def unlock_avatar(self, student_id, avatar_id):
         if self.get_student(student_id) is None:

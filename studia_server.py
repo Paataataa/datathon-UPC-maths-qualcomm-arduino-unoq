@@ -5,25 +5,31 @@
     python3 studia_server.py                 # en la placa (o con túnel a 8081/8082)
 
 Abre http://127.0.0.1:8001. Necesita data/index.db, data/studia.db (build_studia_db.py)
-y crea data/users.db sola. No modifica db_manager.py ni copilot/.
+y crea data/users.db sola. No modifica copilot/.
 
 Seguridad anti-spoiler: el navegador solo recibe problemas pasados por DBManager.public()
 (sin "label"). La respuesta se corrige SIEMPRE aquí, releyendo el problema con get_problem().
 Al navegador tampoco llega nunca raw_text (la salida del LLM antes del guardrail).
+
+Matriz LED: los eventos (acierto, fallo, pensar, pomodoro, gacha, avatar) se envían a la app
+de App Lab de matrix_app/ (puerto 7000 de la placa). Si no está en marcha, se ignoran.
 """
 import argparse
 import json
 import os
+import queue
 import random
+import secrets
 import sqlite3
 import sys
 import threading
 import time
 import traceback
 import urllib.error
+import urllib.request
 from hashlib import sha256
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
@@ -36,37 +42,148 @@ from db_manager import DBManager, MAX_LEVEL, VECTOR_DIM  # noqa: E402
 STATIC = os.path.join(ROOT, "static")
 LANGS = ("cat", "esp", "eng")
 MODES = ("practice", "test")
+
+# Monedas. Práctica: una vez por problema acertado. Test: solo al acabarlo, en proporción a
+# la nota y solo si apruebas. Un test perfecto da 1,5 veces lo que darían sus 8 problemas
+# acertados en la práctica.
 COINS_PER_CORRECT = 10
-GACHA_COST = 30  # monedas GANADAS por tirada: DBManager.add_coins no admite restar
+TEST_TOTAL = 8
+TEST_PASS = 0.5
+TEST_MAX_COINS = 120
+GACHA_COST = 30
+
+# Catálogo de la tienda. Los avatares conservan sus ids antiguos (sin prefijo) por
+# compatibilidad con users.db. "led" es el icono que dibuja la matriz (matrix_app).
 AVATARS = ("fox", "owl", "cat", "robot", "rocket", "dino", "panda", "unicorn")
-# Eventos de la matriz LED 8x13 (Rol 1). Los envía el servidor o, los dos últimos, la página.
-HARDWARE_EVENTS = ("correct", "wrong", "pomodoro", "dyscalculia")
+SLOTS = ("avatar", "theme", "frame", "title")
+ITEMS = {}
+for _id in AVATARS:
+    ITEMS[_id] = {"kind": "avatar", "price": 40, "led": _id}
+for _id in ("ocean", "forest", "sunset", "candy"):
+    ITEMS["theme:" + _id] = {"kind": "theme", "price": 60, "led": "palette"}
+for _id in ("gold", "rainbow", "stars", "fire"):
+    ITEMS["frame:" + _id] = {"kind": "frame", "price": 50, "led": "frame"}
+for _id in ("explorer", "logic", "numbers", "geometry"):
+    ITEMS["title:" + _id] = {"kind": "title", "price": 30, "led": "crown"}
+
+# Eventos de la matriz LED 8x13. Los dos últimos los envía la página; el resto, el servidor.
+HARDWARE_EVENTS = ("correct", "wrong", "thinking", "gacha", "avatar", "pomodoro", "dyscalculia")
 PAGE_EVENTS = ("pomodoro", "dyscalculia")
+POMODORO_ACTIONS = ("start", "pause", "reset", "end")
 LLM_FIELDS = ("text", "seconds", "leaked_and_blocked", "block_reason", "status",
               "prompt_tokens", "cached_tokens")  # lista blanca: raw_text NUNCA sale de aquí
 
 
 # ------------------------------------------------------------------ hardware
 
-def notify_hardware(event, payload=None):
-    """Punto de enlace con la placa. Rol 1: conecta aquí el Bridge de la matriz LED.
+LED = {"url": "http://127.0.0.1:7000", "queue": queue.Queue(), "warned": False}
 
-    event: "correct" | "wrong" | "pomodoro" | "dyscalculia".
-    payload: dict opcional, p. ej. {"action": "start", "minutes": 25} para "pomodoro".
 
-        # from arduino.app_utils import Bridge
-        # Bridge.call("show_event", event)
+def notify_hardware(event, arg=None):
+    """Envía un evento a la matriz LED (matrix_app, en App Lab) sin bloquear.
 
-    Nunca debe lanzar: un fallo de la matriz no puede romper la clase. Se ignora el error.
+    event: uno de HARDWARE_EVENTS. arg: texto corto, p. ej. "start" para "thinking",
+    "start-1500-1500" para "pomodoro" o el icono "fox" para "gacha" y "avatar".
+    Un solo hilo los envía en orden. Nunca lanza: un fallo de la matriz no rompe la clase.
     """
     if event not in HARDWARE_EVENTS:
         raise ValueError(f"evento de hardware desconocido: {event}")
-    try:
-        print(f"  [hardware] {event}" + (f" {json.dumps(payload)}" if payload else ""),
-              file=sys.stderr)
-        # >>> Rol 1: Bridge aquí <<<
-    except Exception as error:  # noqa: BLE001
-        print(f"  [hardware] error ignorado: {error}", file=sys.stderr)
+    arg = str(arg) if arg else "-"
+    print(f"  [hardware] {event} {arg}", file=sys.stderr)
+    if LED["url"]:
+        LED["queue"].put(f"{LED['url']}/led/{quote(event, safe='')}/{quote(arg, safe='')}")
+
+
+def _led_sender():
+    while True:
+        url = LED["queue"].get()
+        try:
+            with urllib.request.urlopen(url, timeout=1) as response:
+                response.read()
+            LED["warned"] = False
+        except OSError as error:
+            if not LED["warned"]:  # un aviso, no uno por evento
+                print(f"  [hardware] matriz LED no disponible ({error}); sigo sin ella",
+                      file=sys.stderr)
+                LED["warned"] = True
+
+
+threading.Thread(target=_led_sender, name="led-sender", daemon=True).start()
+
+
+# ------------------------------------------------------------- precálculo LLM
+
+class Precompute:
+    """Prepara las respuestas del LLM en cuanto se carga un problema de práctica.
+
+    La placa tiene un solo slot de LLM: una cola con un único hilo. Primero la pista,
+    después la explicación de cada opción incorrecta (el servidor conoce la respuesta;
+    el navegador no). Al cargar otro problema se descarta lo pendiente del anterior.
+    """
+
+    def __init__(self):
+        self.cv = threading.Condition()
+        self.jobs = []        # [(clave, función)]; la primera es la siguiente
+        self.results = {}     # clave -> resultado de llm_helper
+        self.running = None   # clave en curso
+        self.current = None   # (id, idioma) del problema actual
+        threading.Thread(target=self._worker, name="precompute", daemon=True).start()
+
+    def start_problem(self, problem):
+        base = (problem["id"], problem["language"])
+        jobs = [(base + ("hint",), lambda: llm_helper.get_socratic_hint(problem))]
+        for letter in sorted(problem["options"]):
+            if letter != problem["label"]:
+                jobs.append((base + ("wrong", letter),
+                             lambda l=letter: llm_helper.explain_wrong_answer(problem, l)))
+        with self.cv:
+            self.current = base
+            self.results = {k: v for k, v in self.results.items() if k[:2] == base}
+            self.jobs = [(k, fn) for k, fn in jobs if k not in self.results and k != self.running]
+            self.cv.notify_all()
+
+    def get(self, key, compute, timeout=60):
+        """Devuelve (resultado, precalculado). Si está en cola lo adelanta y lo espera;
+        si no está (o tarda demasiado), lo calcula aquí."""
+        deadline = time.monotonic() + timeout
+        with self.cv:
+            if key in self.results:
+                return self.results[key], True
+            for i, (k, _fn) in enumerate(self.jobs):
+                if k == key:
+                    self.jobs.insert(0, self.jobs.pop(i))
+                    self.cv.notify_all()
+                    break
+            while key not in self.results:
+                pending = self.running == key or any(k == key for k, _fn in self.jobs)
+                left = deadline - time.monotonic()
+                if not pending or left <= 0:
+                    break
+                self.cv.wait(left)
+            if key in self.results:
+                return self.results[key], True
+        return compute(), False
+
+    def _worker(self):
+        while True:
+            with self.cv:
+                while not self.jobs:
+                    self.cv.wait()
+                key, fn = self.jobs.pop(0)
+                self.running = key
+            try:
+                result = fn()
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+                result = None
+            with self.cv:
+                self.running = None
+                # Solo se guarda lo bueno y del problema actual: un error (modelo caído)
+                # se vuelve a intentar cuando el alumno lo pida.
+                ok = result is not None and not str(result.get("status", "")).startswith("error")
+                if ok and key[:2] == self.current:
+                    self.results[key] = result
+                self.cv.notify_all()
 
 
 # ----------------------------------------------------------------------- app
@@ -135,8 +252,12 @@ def clean_int(value, low, high, name):
     return number
 
 
-def llm_view(result):
-    return {key: result.get(key) for key in LLM_FIELDS}
+def llm_view(result, precomputed=False, waited=None):
+    out = {key: result.get(key) for key in LLM_FIELDS}
+    out["precomputed"] = precomputed
+    if waited is not None:
+        out["waited"] = round(waited, 2)  # lo que esperó el alumno, no lo que tardó el modelo
+    return out
 
 
 class App:
@@ -155,9 +276,11 @@ class App:
             self.db._live_english_vector = fake_vector
             llm_helper.set_mock(True)
         self.student_id = ensure_student(self.db, username)
-        self.rewarded = set()          # (alumno, problema) ya premiados: sin granja de monedas
-        self.lock = threading.Lock()   # check y gacha cambian monedas: de uno en uno
-        self._names = {}
+        self.rewarded = set()          # problemas de práctica ya premiados: sin granja de monedas
+        self.tried = {}                # (id, idioma) -> letras falladas: solo esas se explican
+        self.tests = {}                # sesiones de test en curso
+        self.lock = threading.Lock()   # todo lo que cambia monedas, de uno en uno
+        self.pre = Precompute()
 
     # -- lectura de studia.db (solo lectura, tablas theory y modes) --
     def _studia(self):
@@ -194,6 +317,15 @@ class App:
     def problem(self, query):
         language = clean_language(query.get("language"))
         mode = clean_mode(query.get("mode"))
+        if mode == "test":
+            # Solo para cambiar de idioma la pregunta ACTUAL; las nuevas las da el test.
+            session = self.tests.get(query.get("session"))
+            if session is None or session["done"] or session["current"] != query.get("id"):
+                raise ApiError(403, "los problemas del test los da /api/test/start")
+            problem = self.db.get_problem(clean_id(query["id"]), language)
+            if problem is None:
+                raise ApiError(404, "problema desconocido")
+            return self.db.public(problem)
         if query.get("id"):
             problem = self.db.get_problem(clean_id(query["id"]), language)
         else:
@@ -201,10 +333,8 @@ class App:
             problem = self._pick(language, level, query.get("topic") or None, query.get("skip"))
         if problem is None:
             raise ApiError(404, "no hay problemas con esos filtros")
-        if mode == "practice":
-            # Mientras el alumno lee, la placa ya procesa el enunciado (KV cache, 1 solo slot).
-            # En el test no hay pistas: no gastamos el slot.
-            llm_helper.prewarm_problem_cache(problem, async_mode=True)
+        # Mientras el alumno lee, la placa ya prepara la pista y las explicaciones.
+        self.pre.start_problem(problem)
         return self.db.public(problem)
 
     def _pick(self, language, level, topic, skip):
@@ -242,7 +372,30 @@ class App:
         if question is not None and not isinstance(question, str):
             raise ApiError(400, "question debe ser texto")
         question = (question or "").strip()[:80] or None
-        return llm_view(llm_helper.get_socratic_hint(problem, student_question=question))
+        started = time.perf_counter()
+        notify_hardware("thinking", "start")
+        try:
+            if question:
+                result, pre = llm_helper.get_socratic_hint(problem, student_question=question), False
+            else:
+                key = (problem["id"], problem["language"], "hint")
+                result, pre = self.pre.get(key, lambda: llm_helper.get_socratic_hint(problem))
+        finally:
+            notify_hardware("thinking", "stop")
+        return llm_view(result, pre, time.perf_counter() - started)
+
+    def explain(self, body):
+        """Por qué falla una opción que el alumno YA eligió (nunca otra: no se puede sondear)."""
+        if clean_mode(body.get("mode")) == "test":
+            raise ApiError(403, "no hay explicaciones en el modo test")
+        problem = self._full(body)
+        choice = body.get("choice")
+        if choice not in self.tried.get((problem["id"], problem["language"]), set()):
+            raise ApiError(403, "solo se explican las opciones que ya has elegido")
+        started = time.perf_counter()
+        key = (problem["id"], problem["language"], "wrong", choice)
+        result, pre = self.pre.get(key, lambda: llm_helper.explain_wrong_answer(problem, choice))
+        return llm_view(result, pre, time.perf_counter() - started)
 
     def similar(self, query):
         if clean_mode(query.get("mode")) == "test":
@@ -275,8 +428,12 @@ class App:
         choice = body.get("choice")
         if choice not in problem["options"]:
             raise ApiError(400, "choice debe ser una de las opciones del problema")
+        correct = choice == problem["label"]
+        if mode == "test":
+            return self._check_test(body.get("session"), problem, correct, language)
+        # Práctica: respuesta al instante. La explicación del fallo la pide la página
+        # aparte (/api/explain) y suele estar ya precalculada.
         with self.lock:
-            correct = choice == problem["label"]
             self.db.record_problem_attempt(self.student_id, problem["id"], correct, language=language)
             out = {"correct": correct, "mode": mode, "coins_earned": 0}
             if correct:
@@ -285,18 +442,67 @@ class App:
                     self.db.add_coins(self.student_id, COINS_PER_CORRECT)
                     self.rewarded.add(key)
                     out["coins_earned"] = COINS_PER_CORRECT
-                notify_hardware("correct")
             else:
-                notify_hardware("wrong")
-        if mode == "practice":
-            if correct:
-                out["answer_text"] = problem["options"].get(choice, "")
-            else:
-                # Sin regalar la letra: el helper pasa su salida por el guardrail.
-                out["explanation"] = llm_view(llm_helper.explain_wrong_answer(problem, choice))
+                self.tried.setdefault((problem["id"], problem["language"]), set()).add(choice)
+        notify_hardware("correct" if correct else "wrong")
+        if correct:
+            out["answer_text"] = problem["options"].get(choice, "")
         else:
-            out["next"] = self._next_test(problem["id"], correct, language)
+            out["explain"] = True
         return out
+
+    # -- test con sesión: el servidor sabe qué pregunta toca y premia una sola vez --
+    def test_start(self, body):
+        language = clean_language(body.get("language"))
+        level = clean_int(body.get("level", 0), 0, MAX_LEVEL, "level")
+        problem = self._pick(language, level, None, None)
+        if problem is None:
+            raise ApiError(404, "no hay problemas con esos filtros")
+        session = secrets.token_hex(8)
+        with self.lock:
+            if len(self.tests) > 50:  # solo hay un alumno: no hace falta guardar más
+                self.tests.clear()
+            self.tests[session] = {"current": problem["id"], "language": language, "n": 0,
+                                   "right": 0, "done": False}
+        return {"session": session, "total": TEST_TOTAL, "pass_pct": round(100 * TEST_PASS),
+                "max_coins": TEST_MAX_COINS, "problem": self.db.public(problem)}
+
+    def _check_test(self, session_id, problem, correct, language):
+        with self.lock:
+            session = self.tests.get(session_id) if isinstance(session_id, str) else None
+            if session is None or session["done"]:
+                raise ApiError(403, "no hay ningún test en marcha con esa sesión")
+            if session["current"] != problem["id"]:
+                raise ApiError(409, "esa no es la pregunta actual del test")
+            session["current"] = None  # nadie puede responderla dos veces
+            self.db.record_problem_attempt(self.student_id, problem["id"], correct, language=language)
+            session["n"] += 1
+            session["right"] += int(correct)
+            finished = session["n"] >= TEST_TOTAL
+        notify_hardware("correct" if correct else "wrong")
+        out = {"correct": correct, "mode": "test", "coins_earned": 0}
+        nxt = None if finished else self._next_test(problem["id"], correct, language)
+        with self.lock:
+            if nxt is None:
+                out["test_done"] = self._finish_test(session)
+            else:
+                session["current"] = nxt["problem"]["id"]
+                out["next"] = nxt
+        return out
+
+    def _finish_test(self, session):
+        """Nota = aciertos / preguntas respondidas. Monedas proporcionales a los aciertos
+        sobre las 8 preguntas, y solo si apruebas. Se llama con self.lock cogido."""
+        n, right = session["n"], session["right"]
+        grade = right / n if n else 0.0
+        passed = grade >= TEST_PASS
+        coins = round(TEST_MAX_COINS * right / TEST_TOTAL) if passed else 0
+        if coins:
+            self.db.add_coins(self.student_id, coins)
+        session["done"] = True
+        return {"right": right, "n": n, "total": TEST_TOTAL, "grade_pct": round(100 * grade),
+                "passed": passed, "pass_pct": round(100 * TEST_PASS), "coins_earned": coins,
+                "ran_out": n < TEST_TOTAL}
 
     def _next_test(self, problem_id, correct, language):
         """Siguiente problema adaptativo (+1 / -1 de nivel), sin repetir. None si no hay."""
@@ -310,35 +516,85 @@ class App:
             return None
         return {"problem": result["problem"], "target_level": result["target_level"]}
 
+    # -- perfil, tienda y gacha --
     def progress(self):
         data = self.db.get_progress(self.student_id)
-        owned = [a for a in data["avatars"] if a in AVATARS]
-        data["avatars"] = owned
-        data["all_avatars"] = list(AVATARS)
+        data["owned"] = [i for i in data.pop("avatars") if i in ITEMS]
+        equipped = self.db.get_equipped(self.student_id)
+        data["equipped"] = {slot: item for slot, item in equipped.items() if item in ITEMS}
         data["gacha_cost"] = GACHA_COST
-        data["pulls"] = max(0, data["coins"] // GACHA_COST - len(owned))
+        data["test_max_coins"] = TEST_MAX_COINS
+        data["test_pass_pct"] = round(100 * TEST_PASS)
+        data["coins_per_correct"] = COINS_PER_CORRECT
         return data
+
+    def shop(self):
+        data = self.progress()
+        owned, equipped = set(data["owned"]), data["equipped"]
+        data["items"] = [{"id": item_id, "kind": meta["kind"], "price": meta["price"],
+                          "owned": item_id in owned, "equipped": equipped.get(meta["kind"]) == item_id}
+                         for item_id, meta in ITEMS.items()]
+        return data
+
+    def buy(self, body):
+        item_id = body.get("item")
+        if item_id not in ITEMS:
+            raise ApiError(400, "objeto desconocido")
+        with self.lock:
+            if item_id in self.db.get_avatars(self.student_id):
+                raise ApiError(409, "ya tienes este objeto")
+            try:
+                self.db.spend_coins(self.student_id, ITEMS[item_id]["price"])
+            except ValueError as error:
+                raise ApiError(403, str(error)) from None
+            self.db.unlock_avatar(self.student_id, item_id)
+        return self.shop()
+
+    def equip(self, body):
+        slot, item_id = body.get("slot"), body.get("item")
+        if slot not in SLOTS:
+            raise ApiError(400, f"slot debe ser uno de {', '.join(SLOTS)}")
+        if item_id is not None and (item_id not in ITEMS or ITEMS[item_id]["kind"] != slot):
+            raise ApiError(400, "ese objeto no va en ese hueco")
+        try:
+            self.db.equip(self.student_id, slot, item_id)
+        except ValueError as error:
+            raise ApiError(403, str(error)) from None
+        if slot == "avatar":
+            notify_hardware("avatar", ITEMS[item_id]["led"] if item_id else "smile")
+        return self.shop()
 
     def gacha(self):
         with self.lock:
-            data = self.progress()
-            if data["pulls"] <= 0:
-                raise ApiError(403, f"necesitas {GACHA_COST} monedas ganadas por cada tirada")
-            locked = [a for a in AVATARS if a not in data["avatars"]]
+            owned = set(self.db.get_avatars(self.student_id))
+            locked = [i for i in ITEMS if i not in owned]
             if not locked:
-                raise ApiError(409, "ya tienes todos los avatares")
+                raise ApiError(409, "ya lo tienes todo")
+            try:
+                self.db.spend_coins(self.student_id, GACHA_COST)
+            except ValueError as error:
+                raise ApiError(403, str(error)) from None
             won = random.choice(locked)
             self.db.unlock_avatar(self.student_id, won)
-        return {"avatar": won, "progress": self.progress()}
+        notify_hardware("gacha", ITEMS[won]["led"])  # la tirada se ve en la matriz
+        return {"item": won, "kind": ITEMS[won]["kind"], "shop": self.shop()}
 
     def event(self, body):
         event = body.get("event")
         if event not in PAGE_EVENTS:
             raise ApiError(400, f"la página solo puede enviar: {', '.join(PAGE_EVENTS)}")
-        payload = body.get("payload")
-        if not isinstance(payload, dict) or len(json.dumps(payload)) > 300:
-            payload = None
-        notify_hardware(event, payload)
+        payload = body.get("payload") if isinstance(body.get("payload"), dict) else {}
+        if event == "pomodoro":
+            action = payload.get("action")
+            if action not in POMODORO_ACTIONS:
+                raise ApiError(400, f"action debe ser una de {', '.join(POMODORO_ACTIONS)}")
+            if action in ("start", "pause"):
+                seconds = clean_int(payload.get("seconds"), 0, 7200, "seconds")
+                total = clean_int(payload.get("total"), 1, 7200, "total")
+                action = f"{action}-{seconds}-{total}"
+            notify_hardware("pomodoro", action)
+        else:
+            notify_hardware("dyscalculia", "on" if payload.get("on") else "off")
         return {"ok": True}
 
 
@@ -348,8 +604,13 @@ ROUTES = {
     ("GET", "/api/theory"): lambda app, q, b: app.theory(q),
     ("GET", "/api/similar"): lambda app, q, b: app.similar(q),
     ("GET", "/api/progress"): lambda app, q, b: app.progress(),
+    ("GET", "/api/shop"): lambda app, q, b: app.shop(),
     ("POST", "/api/hint"): lambda app, q, b: app.hint(b),
+    ("POST", "/api/explain"): lambda app, q, b: app.explain(b),
     ("POST", "/api/check"): lambda app, q, b: app.check(b),
+    ("POST", "/api/test/start"): lambda app, q, b: app.test_start(b),
+    ("POST", "/api/buy"): lambda app, q, b: app.buy(b),
+    ("POST", "/api/equip"): lambda app, q, b: app.equip(b),
     ("POST", "/api/gacha"): lambda app, q, b: app.gacha(),
     ("POST", "/api/event"): lambda app, q, b: app.event(b),
 }
@@ -426,8 +687,11 @@ def main():
     p.add_argument("--student", default="demo", help="alumno por defecto de la demo")
     p.add_argument("--host", default="127.0.0.1", help="0.0.0.0 para abrirlo a tu red")
     p.add_argument("--port", type=int, default=8001)
+    p.add_argument("--led-url", default=LED["url"],
+                   help="app de la matriz (matrix_app, App Lab). '' para no usarla")
     args = p.parse_args()
     os.chdir(ROOT)
+    LED["url"] = args.led_url.rstrip("/")
 
     app = App(args.data_dir, args.mock, args.student)
     status = app.status()
@@ -439,6 +703,9 @@ def main():
         if not status["llm"]:
             print("  Sin LLM las pistas devuelven la pista segura de reserva. "
                   "¿Túnel SSH a 8081/8082, o usa --mock?")
+    print(f"  matriz LED: {LED['url'] or 'desactivada'}")
+    avatar = app.db.get_equipped(app.student_id).get("avatar")
+    notify_hardware("avatar", ITEMS[avatar]["led"] if avatar in ITEMS else "smile")
     print(f"Abre http://{args.host}:{args.port} (Ctrl+C para parar)", flush=True)
     ThreadingHTTPServer((args.host, args.port), make_handler(app)).serve_forever()
 

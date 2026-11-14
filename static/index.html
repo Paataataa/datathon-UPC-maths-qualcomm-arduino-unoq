@@ -11,6 +11,11 @@
   --bad: #b3261e; --bad-bg: #fdeceb; --warn: #8a5a00; --warn-bg: #fff3d6; --focus: #ff9f1c;
   --radius: 14px;
 }
+/* Temas de la tienda: van antes del modo dislexia para que este tenga prioridad */
+body.theme-ocean { --bg: #e8f4fa; --brand: #0b6e99; }
+body.theme-forest { --bg: #ecf5ea; --brand: #2f7a3d; }
+body.theme-sunset { --bg: #fff1e6; --brand: #b4440e; }
+body.theme-candy { --bg: #fbeef7; --brand: #a62582; }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body {
@@ -92,6 +97,7 @@ h2 { margin: 0 0 12px; font-size: 1.15rem; }
 .opt:hover:not(:disabled) { border-color: var(--brand); }
 .opt.right { border-color: var(--ok); background: var(--ok-bg); opacity: 1; }
 .opt.wrong { border-color: var(--bad); background: var(--bad-bg); opacity: 1; }
+.opt.pending { border-color: var(--brand); border-style: dashed; opacity: 1; }
 .feedback { margin-top: 12px; padding: 10px 14px; border-radius: 10px; font-weight: 700; }
 .feedback.ok { background: var(--ok-bg); color: var(--ok); }
 .feedback.bad { background: var(--bad-bg); color: var(--bad); }
@@ -135,6 +141,35 @@ dialog::backdrop { background: rgba(20, 25, 45, .55); }
 .av.sel { border-color: var(--brand); background: #eef0ff; }
 .reveal { text-align: center; font-size: 4rem; animation: pop .5s ease; }
 @keyframes pop { 0% { transform: scale(.2) rotate(-20deg); } 70% { transform: scale(1.25); } 100% { transform: scale(1); } }
+/* Avatar con marco (cabecera, perfil y tienda) */
+.ava-frame { display: inline-grid; place-items: center; width: 1.9em; height: 1.9em; border-radius: 50%; border: 3px solid transparent; background: #f4f6fb; line-height: 1; }
+.ava-frame.big { font-size: 3.2rem; }
+.ava-frame.frame-gold { border-color: #d4a514; box-shadow: 0 0 0 3px #fff1b8; }
+.ava-frame.frame-rainbow { background: linear-gradient(#f4f6fb, #f4f6fb) padding-box, conic-gradient(#e53935, #fb8c00, #fdd835, #43a047, #1e88e5, #8e24aa, #e53935) border-box; }
+.ava-frame.frame-stars { border-style: dotted; border-color: #3f51d6; }
+.ava-frame.frame-fire { border-color: #e4572e; box-shadow: 0 0 10px #ff8a00; }
+.coins .ava-frame { font-size: 1rem; width: 1.7em; height: 1.7em; border-width: 2px; vertical-align: middle; }
+/* Tienda */
+.shop-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 8px 0 18px; }
+.item { border: 2px solid var(--line); border-radius: 14px; padding: 12px; display: grid; gap: 8px; justify-items: center; text-align: center; background: var(--card); }
+.item.owned { border-color: var(--ok); }
+.item.equipped { border-color: var(--brand); background: #eef0ff; }
+.item .prev { font-size: 2rem; min-height: 2.4rem; display: grid; place-items: center; }
+.item .price { font-weight: 800; color: #5a4300; }
+.swatch { width: 54px; height: 34px; border-radius: 8px; border: 1px solid var(--line); }
+.title-tag { font-size: .85rem; font-weight: 800; padding: 3px 10px; border-radius: 99px; background: var(--brand); color: var(--brand-ink); }
+.gacha-box { border: 2px dashed #e0b100; background: #fffbea; border-radius: 16px; padding: 14px 16px; display: grid; gap: 10px; }
+.reel { height: 4.2rem; overflow: hidden; display: grid; place-items: center; font-size: 3rem; }
+.reel.spin span { animation: reel .12s linear infinite; }
+@keyframes reel { from { transform: translateY(-40%); } to { transform: translateY(40%); } }
+/* Perfil */
+.profile-top { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; margin-bottom: 14px; }
+.slot { margin: 14px 0; }
+.slot .choices { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.choice { border: 2px solid var(--line); background: var(--card); color: var(--ink); border-radius: 12px; padding: 6px 12px; font-weight: 600; display: inline-flex; gap: 6px; align-items: center; }
+.choice[aria-pressed=true] { border-color: var(--brand); background: #eef0ff; }
+.test-result { display: grid; gap: 8px; }
 .sr { position: absolute; left: -9999px; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
@@ -151,7 +186,7 @@ dialog::backdrop { background: rgba(20, 25, 45, .55); }
     <button class="toggle" id="t-dys" aria-pressed="false"></button>
     <button class="toggle" id="t-calc" aria-pressed="false"></button>
   </div>
-  <button class="coins" id="coinsBtn" aria-haspopup="dialog">🪙 <span id="coins">0</span> <span id="avatarNow"></span></button>
+  <button class="coins" id="coinsBtn">🪙 <span id="coins">0</span> <span id="avatarNow"></span></button>
 </header>
 
 <div id="pomodoro" class="pomo" hidden style="max-width:1068px;margin:12px auto 0">
@@ -167,6 +202,8 @@ dialog::backdrop { background: rgba(20, 25, 45, .55); }
   <button role="tab" id="tab-learn" aria-selected="false" data-tab="learn"></button>
   <button role="tab" id="tab-practice" aria-selected="true" data-tab="practice"></button>
   <button role="tab" id="tab-test" aria-selected="false" data-tab="test"></button>
+  <button role="tab" id="tab-shop" aria-selected="false" data-tab="shop"></button>
+  <button role="tab" id="tab-profile" aria-selected="false" data-tab="profile"></button>
 </nav>
 
 <main>
@@ -222,18 +259,31 @@ dialog::backdrop { background: rgba(20, 25, 45, .55); }
     <h2 data-i18n="analytics"></h2>
     <div id="analytics"></div>
   </section>
-</main>
 
-<dialog id="gacha" aria-labelledby="gTitle">
-  <h2 id="gTitle">🎰 Gacha</h2>
-  <p id="gInfo" class="muted"></p>
-  <div id="gReveal"></div>
-  <div class="avatars" id="gGrid"></div>
-  <div class="row" style="justify-content:space-between">
-    <button class="btn" id="gPull"></button>
-    <button class="btn ghost" id="gClose"></button>
-  </div>
-</dialog>
+  <!-- 4. TIENDA -->
+  <section class="panel" id="shop" role="tabpanel" hidden>
+    <div class="shop-head">
+      <h2 data-i18n="shopTitle"></h2>
+      <span class="coins" id="shopCoins"></span>
+    </div>
+    <div class="gacha-box">
+      <div class="row" style="justify-content:space-between">
+        <strong>🎰 <span data-i18n="gachaTitle"></span></strong>
+        <button class="btn" id="gPull"></button>
+      </div>
+      <p class="muted" id="gInfo" style="margin:0"></p>
+      <div id="gReveal" aria-live="polite"></div>
+    </div>
+    <div id="shopBody"></div>
+  </section>
+
+  <!-- 5. PERFIL -->
+  <section class="panel" id="profile" role="tabpanel" hidden>
+    <div class="profile-top" id="profileTop"></div>
+    <div class="stats" id="profileStats"></div>
+    <div id="profileSlots"></div>
+  </section>
+</main>
 
 <script>
 (() => {
@@ -286,8 +336,14 @@ const T = {
     testStart: 'Començar el repte', testQ: 'Pregunta', testRight: '✓ Correcte', testWrong: '✗ Incorrecte', testNow: 'Nivell',
     testDone: 'Repte acabat', testScore: 'Encerts', testAgain: 'Tornar a començar', testNoMore: 'No queden més problemes d\'aquest nivell.',
     analytics: 'Analítiques', errorsBy: 'Errors per tema', noErrors: 'Cap error registrat. 🎉', attempts: 'Intents', accuracy: 'Precisió', coinsL: 'Monedes',
-    gInfo: 'Cada 30 monedes guanyades = 1 tirada.', gPull: '🎰 Tirar', gClose: 'Tancar', gPulls: 'Tirades disponibles', gNone: 'Encara no tens prou monedes.',
-    gAll: 'Ja tens tots els avatars!', gWon: 'Has guanyat un avatar nou!', checking: 'Comprovant…',
+    shop: '4. Botiga', profile: '5. Perfil', shopTitle: 'Botiga', gachaTitle: 'Gacha (es veu a la matriu LED!)',
+    gInfo: 'Cada tirada costa {c} monedes i et dóna un objecte que encara no tens.', gPull: '🎰 Tirar ({c} 🪙)', gSpin: 'Girant…',
+    gAll: 'Ja ho tens tot!', gWon: 'Has guanyat:', buy: 'Comprar', equip: 'Posar', equipped: '✓ Posat', remove: 'Treure', none: 'Cap',
+    notEnough: 'No tens prou monedes.', checking: 'Comprovant…', explaining: 'studIA mira per què no és aquesta',
+    k_avatar: 'Avatars', k_theme: 'Paletes de colors', k_frame: 'Marcs', k_title: 'Títols', precomputed: 'preparada mentre llegies',
+    testCoins: 'Si aproves (mínim un {p}%), guanyes fins a {m} monedes segons la nota. A la pràctica: {c} per problema encertat.',
+    testPassed: 'Aprovat!', testFailed: 'Encara no: cal un {p}% per aprovar i guanyar monedes.', testGrade: 'Nota', coinsEarned: 'Monedes guanyades',
+    student: 'Alumne', owned: 'Objectes', profileHint: 'Personalitza el teu perfil amb el que compris a la botiga.',
   },
   esp: {
     language: 'Idioma', level: 'Nivel', topic: 'Tema', allTopics: 'Todos los temas', tdah: 'Paso a paso', dys: 'Frases cortas', calc: 'Apoyo visual',
@@ -307,8 +363,14 @@ const T = {
     testStart: 'Empezar el reto', testQ: 'Pregunta', testRight: '✓ Correcto', testWrong: '✗ Incorrecto', testNow: 'Nivel',
     testDone: 'Reto terminado', testScore: 'Aciertos', testAgain: 'Volver a empezar', testNoMore: 'No quedan más problemas de ese nivel.',
     analytics: 'Analíticas', errorsBy: 'Errores por tema', noErrors: 'Ningún error registrado. 🎉', attempts: 'Intentos', accuracy: 'Precisión', coinsL: 'Monedas',
-    gInfo: 'Cada 30 monedas ganadas = 1 tirada.', gPull: '🎰 Tirar', gClose: 'Cerrar', gPulls: 'Tiradas disponibles', gNone: 'Aún no tienes monedas suficientes.',
-    gAll: '¡Ya tienes todos los avatares!', gWon: '¡Has ganado un avatar nuevo!', checking: 'Comprobando…',
+    shop: '4. Tienda', profile: '5. Perfil', shopTitle: 'Tienda', gachaTitle: 'Gacha (¡se ve en la matriz LED!)',
+    gInfo: 'Cada tirada cuesta {c} monedas y te da un objeto que aún no tienes.', gPull: '🎰 Tirar ({c} 🪙)', gSpin: 'Girando…',
+    gAll: '¡Ya lo tienes todo!', gWon: 'Has ganado:', buy: 'Comprar', equip: 'Poner', equipped: '✓ Puesto', remove: 'Quitar', none: 'Ninguno',
+    notEnough: 'No tienes monedas suficientes.', checking: 'Comprobando…', explaining: 'studIA mira por qué no es esa',
+    k_avatar: 'Avatares', k_theme: 'Paletas de colores', k_frame: 'Marcos', k_title: 'Títulos', precomputed: 'preparada mientras leías',
+    testCoins: 'Si apruebas (mínimo un {p}%), ganas hasta {m} monedas según la nota. En la práctica: {c} por problema acertado.',
+    testPassed: '¡Aprobado!', testFailed: 'Todavía no: hace falta un {p}% para aprobar y ganar monedas.', testGrade: 'Nota', coinsEarned: 'Monedas ganadas',
+    student: 'Alumno', owned: 'Objetos', profileHint: 'Personaliza tu perfil con lo que compres en la tienda.',
   },
   eng: {
     language: 'Language', level: 'Level', topic: 'Topic', allTopics: 'All topics', tdah: 'Step by step', dys: 'Short sentences', calc: 'Visual support',
@@ -328,10 +390,33 @@ const T = {
     testStart: 'Start the challenge', testQ: 'Question', testRight: '✓ Correct', testWrong: '✗ Wrong', testNow: 'Level',
     testDone: 'Challenge finished', testScore: 'Correct', testAgain: 'Start again', testNoMore: 'No more problems at that level.',
     analytics: 'Analytics', errorsBy: 'Errors by topic', noErrors: 'No errors recorded. 🎉', attempts: 'Attempts', accuracy: 'Accuracy', coinsL: 'Coins',
-    gInfo: 'Every 30 coins earned = 1 pull.', gPull: '🎰 Pull', gClose: 'Close', gPulls: 'Pulls available', gNone: 'Not enough coins yet.',
-    gAll: 'You already have every avatar!', gWon: 'You won a new avatar!', checking: 'Checking…',
+    shop: '4. Shop', profile: '5. Profile', shopTitle: 'Shop', gachaTitle: 'Gacha (watch the LED matrix!)',
+    gInfo: 'Each pull costs {c} coins and gives you an item you do not have yet.', gPull: '🎰 Pull ({c} 🪙)', gSpin: 'Spinning…',
+    gAll: 'You already have everything!', gWon: 'You won:', buy: 'Buy', equip: 'Use', equipped: '✓ In use', remove: 'Remove', none: 'None',
+    notEnough: 'Not enough coins.', checking: 'Checking…', explaining: 'studIA is looking at why that one is wrong',
+    k_avatar: 'Avatars', k_theme: 'Colour palettes', k_frame: 'Frames', k_title: 'Titles', precomputed: 'prepared while you were reading',
+    testCoins: 'If you pass (at least {p}%), you earn up to {m} coins depending on your score. In practice: {c} per problem solved.',
+    testPassed: 'Passed!', testFailed: 'Not yet: you need {p}% to pass and earn coins.', testGrade: 'Score', coinsEarned: 'Coins earned',
+    student: 'Student', owned: 'Items', profileHint: 'Customise your profile with what you buy in the shop.',
   },
 };
+const ITEM_NAMES = {
+  cat: { fox: 'Guineu', owl: 'Mussol', cat: 'Gat', robot: 'Robot', rocket: 'Coet', dino: 'Dino', panda: 'Panda', unicorn: 'Unicorn',
+    'theme:ocean': 'Oceà', 'theme:forest': 'Bosc', 'theme:sunset': 'Posta de sol', 'theme:candy': 'Llaminadura',
+    'frame:gold': 'Or', 'frame:rainbow': 'Arc de Sant Martí', 'frame:stars': 'Estrelles', 'frame:fire': 'Foc',
+    'title:explorer': 'Esperit explorador', 'title:logic': 'Cervell lògic', 'title:numbers': 'Ninja dels nombres', 'title:geometry': 'Màgia geomètrica' },
+  esp: { fox: 'Zorro', owl: 'Búho', cat: 'Gato', robot: 'Robot', rocket: 'Cohete', dino: 'Dino', panda: 'Panda', unicorn: 'Unicornio',
+    'theme:ocean': 'Océano', 'theme:forest': 'Bosque', 'theme:sunset': 'Atardecer', 'theme:candy': 'Caramelo',
+    'frame:gold': 'Oro', 'frame:rainbow': 'Arcoíris', 'frame:stars': 'Estrellas', 'frame:fire': 'Fuego',
+    'title:explorer': 'Espíritu explorador', 'title:logic': 'Cerebro lógico', 'title:numbers': 'Ninja de los números', 'title:geometry': 'Magia geométrica' },
+  eng: { fox: 'Fox', owl: 'Owl', cat: 'Cat', robot: 'Robot', rocket: 'Rocket', dino: 'Dino', panda: 'Panda', unicorn: 'Unicorn',
+    'theme:ocean': 'Ocean', 'theme:forest': 'Forest', 'theme:sunset': 'Sunset', 'theme:candy': 'Candy',
+    'frame:gold': 'Gold', 'frame:rainbow': 'Rainbow', 'frame:stars': 'Stars', 'frame:fire': 'Fire',
+    'title:explorer': 'Explorer spirit', 'title:logic': 'Logic brain', 'title:numbers': 'Number ninja', 'title:geometry': 'Geometry magic' },
+};
+const THEME_SWATCH = { 'theme:ocean': '#0b6e99', 'theme:forest': '#2f7a3d', 'theme:sunset': '#b4440e', 'theme:candy': '#a62582' };
+const KIND_ICON = { avatar: '🙂', theme: '🎨', frame: '🖼️', title: '🏷️' };
+const fill = (s, o) => String(s).replace(/\{(\w)\}/g, (_, k) => (k in o ? o[k] : ''));
 const t = k => (T[S.lang] && T[S.lang][k]) || T.eng[k] || k;
 const TOPIC_ICON = { 'Geometría': '📐', 'Combinatoria': '🎲', 'Lógica': '🧩', 'Aritmética': '➕', 'Patrones': '🔢' };
 const AVATAR_EMOJI = { fox: '🦊', owl: '🦉', cat: '🐱', robot: '🤖', rocket: '🚀', dino: '🦖', panda: '🐼', unicorn: '🦄' };
@@ -341,8 +426,8 @@ const S = {
   lang: store.get('lang', 'cat'), level: store.get('level', 0), topic: '', tab: 'practice',
   modes: store.get('modes', { tdah: false, dys: false, calc: false }),
   theory: null, problem: null, wrongSet: new Set(), solved: false, busy: false, progress: null,
-  test: { active: false, n: 0, total: 8, right: 0, level: 0, problem: null, answered: false },
-  avatar: store.get('avatar', null),
+  test: { active: false, n: 0, total: 8, right: 0, level: 0, problem: null, answered: false, session: null },
+  shop: null, spinning: false,
 };
 
 /* ---------- textos estáticos ---------- */
@@ -358,7 +443,8 @@ function applyStatic() {
   $('#bTheory').textContent = t('bTheory'); $('#bSimilar').textContent = t('bSimilar'); $('#bHint').textContent = t('bHint');
   $('#askBtn').textContent = t('ask'); $('#askInput').placeholder = t('askPh');
   $('#testStart').textContent = t('testStart');
-  $('#gInfo').textContent = t('gInfo'); $('#gPull').textContent = t('gPull'); $('#gClose').textContent = t('gClose');
+  $('#tab-shop').textContent = t('shop'); $('#tab-profile').textContent = t('profile');
+  renderTestIntro();
   $('#pomoStart').textContent = pomo.running ? t('pause') : t('start');
   const sel = $('#level'); const cur = String(S.level);
   sel.replaceChildren(...[0, 1, 2, 3, 4, 5, 6, 7].map(i => el('option', { value: i }, String(i))));
@@ -491,11 +577,15 @@ async function loadPractice(fresh, keepId) {
 }
 
 async function pickPractice(letter) {
-  if (!S.problem || S.solved || S.busy) return;
-  S.busy = true;
-  showFeedback('info', t('checking'));
+  if (!S.problem || S.solved || S.checking) return;
+  S.checking = true;
+  const p = S.problem;
+  const btn = $(`#pCard .opt[data-letter="${letter}"]`);
+  if (btn) btn.classList.add('pending');
   try {
-    const r = await api('/api/check', { problem_id: S.problem.id, language: S.lang, choice: letter, mode: 'practice' });
+    // El servidor corrige al instante (no espera al LLM): el rojo sale enseguida.
+    const r = await api('/api/check', { problem_id: p.id, language: S.lang, choice: letter, mode: 'practice' });
+    if (S.problem !== p) return;
     if (r.correct) {
       S.solved = letter;
       renderPractice();
@@ -504,10 +594,22 @@ async function pickPractice(letter) {
       S.wrongSet.add(letter);
       renderPractice();
       showFeedback('bad', t('wrong'));
-      if (r.explanation) addAi('explain', r.explanation);
+      if (r.explain) explainWrong(p, letter);
     }
     refreshProgress();
-  } catch (e) { showFeedback('bad', e.message); } finally { S.busy = false; }
+  } catch (e) { if (btn) btn.classList.remove('pending'); showFeedback('bad', e.message); } finally { S.checking = false; }
+}
+
+async function explainWrong(p, letter) {
+  // Normalmente ya está precalculada desde que se cargó el problema.
+  const log = $('#log');
+  const wait = el('div', { class: 'ai thinking' }, t('explaining'));
+  log.prepend(wait);
+  try {
+    const r = await api('/api/explain', { problem_id: p.id, language: S.lang, choice: letter, mode: 'practice' });
+    if (S.problem === p) addAi('explain', r);
+  } catch (e) { if (S.problem === p) log.prepend(el('div', { class: 'ai' }, el('div', { class: 'feedback bad' }, e.message))); }
+  finally { wait.remove(); }
 }
 
 /* ---------- panel del copiloto ---------- */
@@ -517,7 +619,9 @@ function setCopilotBusy(on) {
 function guardBlock(r) {
   const noModel = r.status && r.status.startsWith('error');
   const badges = [];
-  if (r.seconds != null) badges.push(el('span', { class: 'badge' }, `⏱ ${t('latency')}: ${Number(r.seconds).toFixed(1)} s`));
+  const shown = r.waited != null ? r.waited : r.seconds;  // lo que esperó el alumno
+  if (shown != null) badges.push(el('span', { class: 'badge' }, `⏱ ${t('latency')}: ${Number(shown).toFixed(1)} s`));
+  if (r.precomputed) badges.push(el('span', { class: 'badge ok' }, '⚡ ' + t('precomputed')));
   if (r.leaked_and_blocked) badges.push(el('span', { class: 'badge warn' }, '🛡️ ' + t('guardBlocked') + (r.block_reason ? ` (${r.block_reason})` : '')));
   else if (noModel) badges.push(el('span', { class: 'badge warn' }, '⚠️ ' + t('guardNoModel')));
   else badges.push(el('span', { class: 'badge ok' }, '🛡️ ' + t('guardOk')));
@@ -596,11 +700,18 @@ $('#practiceTopic').onclick = () => {
 function testShow(which) {
   $('#testIntro').hidden = which !== 'intro'; $('#testRun').hidden = which !== 'run'; $('#testDone').hidden = which !== 'done';
 }
+function renderTestIntro() {
+  const p = S.progress;
+  const box = $('#testIntro .muted');
+  if (box) box.replaceChildren(t('testIntro'), el('br'), '🪙 ' + fill(t('testCoins'), {
+    p: p ? p.test_pass_pct : 50, m: p ? p.test_max_coins : 120, c: p ? p.coins_per_correct : 10 }));
+}
 async function testStart() {
-  Object.assign(S.test, { active: true, n: 0, right: 0, level: S.level, problem: null, answered: false });
+  Object.assign(S.test, { active: true, n: 0, right: 0, level: S.level, problem: null, answered: false, session: null });
   testShow('run'); $('#tFeedback').replaceChildren();
   try {
-    S.test.problem = await api('/api/problem?' + qs({ language: S.lang, level: S.level, mode: 'test' }));
+    const r = await api('/api/test/start', { language: S.lang, level: S.level });
+    Object.assign(S.test, { session: r.session, total: r.total, problem: r.problem });
     renderTest();
   } catch (e) { testShow('intro'); $('#testIntro').append(el('div', { class: 'feedback bad' }, e.message)); }
 }
@@ -617,39 +728,134 @@ async function pickTest(letter) {
   const T_ = S.test; if (T_.answered || !T_.problem) return;
   T_.answered = true; renderTest();
   try {
-    const r = await api('/api/check', { problem_id: T_.problem.id, language: S.lang, choice: letter, mode: 'test' });
+    const r = await api('/api/check', { problem_id: T_.problem.id, language: S.lang, choice: letter, mode: 'test', session: T_.session });
     if (r.correct) T_.right++;
     T_.n++;
     $('#testBar').style.width = (T_.n / T_.total * 100) + '%';
+    const b = $(`#tCard .opt[data-letter="${letter}"]`);
+    if (b) b.classList.add(r.correct ? 'right' : 'wrong');
     $('#tFeedback').replaceChildren(el('div', { class: 'feedback ' + (r.correct ? 'ok' : 'bad') }, r.correct ? t('testRight') : t('testWrong')));
-    refreshProgress();
     const nxt = r.next;
-    if (T_.n >= T_.total || !nxt) { setTimeout(() => testFinish(!nxt && T_.n < T_.total), 900); return; }
+    if (r.test_done) { setTimeout(() => testFinish(r.test_done), 900); return; }
     setTimeout(() => {
       T_.problem = nxt.problem; T_.level = nxt.target_level; T_.answered = false;
       $('#tFeedback').replaceChildren(); renderTest();
     }, 1000);
   } catch (e) { T_.answered = false; renderTest(); $('#tFeedback').replaceChildren(el('div', { class: 'feedback bad' }, e.message)); }
 }
-function testFinish(ranOut) {
+function testFinish(d) {
   S.test.active = false; testShow('done');
   $('#testDone').replaceChildren(el('h2', {}, '🏁 ' + t('testDone')),
-    el('div', { class: 'stats' }, el('div', { class: 'stat' }, t('testScore'), el('b', {}, `${S.test.right}/${S.test.n}`)),
-      el('div', { class: 'stat' }, t('testNow'), el('b', {}, String(S.test.level)))),
-    ranOut ? el('p', { class: 'muted' }, t('testNoMore')) : '',
-    el('button', { class: 'btn', onclick: () => { testShow('intro'); } }, t('testAgain')));
+    el('div', { class: 'stats' },
+      el('div', { class: 'stat' }, t('testScore'), el('b', {}, `${d.right}/${d.n}`)),
+      el('div', { class: 'stat' }, t('testGrade'), el('b', {}, d.grade_pct + '%')),
+      el('div', { class: 'stat' }, t('testNow'), el('b', {}, String(S.test.level))),
+      el('div', { class: 'stat' }, t('coinsEarned'), el('b', {}, '🪙 +' + d.coins_earned))),
+    el('div', { class: 'feedback ' + (d.passed ? 'ok' : 'bad') }, d.passed ? '🎉 ' + t('testPassed') : fill(t('testFailed'), { p: d.pass_pct })),
+    d.ran_out ? el('p', { class: 'muted' }, t('testNoMore')) : '',
+    el('p', {}, el('button', { class: 'btn', onclick: () => { testShow('intro'); } }, t('testAgain'))));
   refreshProgress();
 }
 $('#testStart').onclick = testStart;
 
 /* ---------- progreso, analíticas y gacha ---------- */
 async function refreshProgress() {
-  try { S.progress = await api('/api/progress'); } catch { return; }
-  const p = S.progress;
-  $('#coins').textContent = p.coins;
-  const own = S.avatar && p.avatars.includes(S.avatar) ? S.avatar : p.avatars[p.avatars.length - 1];
-  $('#avatarNow').textContent = own ? AVATAR_EMOJI[own] || '🎭' : '';
-  renderAnalytics(); renderGacha();
+  try { S.shop = await api('/api/shop'); } catch { return; }
+  S.progress = S.shop;
+  applyLook(); renderAnalytics(); renderTestIntro(); renderShop(); renderProfile();
+}
+
+/* Lo equipado: avatar y marco en la cabecera, tema de colores en toda la página */
+const itemName = id => (ITEM_NAMES[S.lang] && ITEM_NAMES[S.lang][id]) || ITEM_NAMES.eng[id] || id;
+function avatarNode(big) {
+  const eq = (S.shop && S.shop.equipped) || {};
+  const frame = eq.frame ? ' ' + eq.frame.replace(':', '-') : '';
+  return el('span', { class: 'ava-frame' + (big ? ' big' : '') + frame, role: 'img', 'aria-label': eq.avatar ? itemName(eq.avatar) : 'avatar' },
+    eq.avatar ? AVATAR_EMOJI[eq.avatar] || '🎭' : '🙂');
+}
+function applyLook() {
+  const eq = (S.shop && S.shop.equipped) || {};
+  [...document.body.classList].filter(c => c.startsWith('theme-')).forEach(c => document.body.classList.remove(c));
+  if (eq.theme) document.body.classList.add(eq.theme.replace(':', '-'));
+  $('#coins').textContent = S.shop.coins;
+  $('#avatarNow').replaceChildren(avatarNode(false));
+}
+function itemPreview(it) {
+  if (it.kind === 'avatar') return el('div', { class: 'prev' }, AVATAR_EMOJI[it.id] || '🎭');
+  if (it.kind === 'theme') return el('div', { class: 'prev' }, el('div', { class: 'swatch', style: `background:${THEME_SWATCH[it.id]}` }));
+  if (it.kind === 'frame') return el('div', { class: 'prev' }, el('span', { class: 'ava-frame ' + it.id.replace(':', '-') }, '🙂'));
+  return el('div', { class: 'prev' }, el('span', { class: 'title-tag' }, itemName(it.id)));
+}
+
+/* ---------- TIENDA ---------- */
+function renderShop() {
+  const s = S.shop; if (!s) return;
+  $('#shopCoins').textContent = '🪙 ' + s.coins;
+  const locked = s.items.filter(i => !i.owned).length;
+  $('#gInfo').textContent = locked ? fill(t('gInfo'), { c: s.gacha_cost }) : t('gAll');
+  $('#gPull').textContent = S.spinning ? t('gSpin') : fill(t('gPull'), { c: s.gacha_cost });
+  $('#gPull').disabled = S.spinning || !locked || s.coins < s.gacha_cost;
+  const body = $('#shopBody');
+  body.replaceChildren(...['avatar', 'theme', 'frame', 'title'].flatMap(kind => [
+    el('h3', { style: 'margin:14px 0 0;font-size:1rem' }, KIND_ICON[kind] + ' ' + t('k_' + kind)),
+    el('div', { class: 'shop-grid' }, s.items.filter(i => i.kind === kind).map(it => el('div', {
+      class: 'item' + (it.owned ? ' owned' : '') + (it.equipped ? ' equipped' : ''),
+    }, itemPreview(it), el('b', {}, itemName(it.id)),
+      it.owned
+        ? el('button', { class: 'btn' + (it.equipped ? '' : ' ghost'), disabled: it.equipped, onclick: () => equip(kind, it.id) }, it.equipped ? t('equipped') : t('equip'))
+        : el('button', { class: 'btn', disabled: s.coins < it.price, title: s.coins < it.price ? t('notEnough') : null, onclick: () => buy(it.id) },
+          `${t('buy')} · ${it.price} 🪙`)))),
+  ]));
+}
+async function buy(id) {
+  try { S.shop = await api('/api/buy', { item: id }); S.progress = S.shop; applyLook(); renderShop(); renderProfile(); renderAnalytics(); }
+  catch (e) { $('#gReveal').replaceChildren(el('div', { class: 'feedback bad' }, e.message)); }
+}
+async function equip(slot, id) {
+  try { S.shop = await api('/api/equip', { slot, item: id }); S.progress = S.shop; applyLook(); renderShop(); renderProfile(); }
+  catch (e) { $('#gReveal').replaceChildren(el('div', { class: 'feedback bad' }, e.message)); }
+}
+$('#gPull').onclick = async () => {
+  if (S.spinning) return;
+  S.spinning = true; renderShop();
+  // Rodillo en la página mientras la matriz LED hace su propia tirada (~3,5 s).
+  const pool = Object.values(AVATAR_EMOJI).concat(['🎨', '🖼️', '🏷️']);
+  const reel = el('div', { class: 'reel spin' }, el('span', {}, pool[0]));
+  $('#gReveal').replaceChildren(reel);
+  let i = 0; const spin = setInterval(() => { reel.firstChild.textContent = pool[i++ % pool.length]; }, 120);
+  try {
+    const [r] = await Promise.all([api('/api/gacha', {}), new Promise(ok => setTimeout(ok, 3500))]);
+    clearInterval(spin);
+    S.shop = r.shop; S.progress = r.shop;
+    const it = S.shop.items.find(x => x.id === r.item) || { id: r.item, kind: r.kind };
+    $('#gReveal').replaceChildren(el('div', { class: 'reveal' }, itemPreview(it)),
+      el('p', { style: 'text-align:center;margin:0' }, `${t('gWon')} `, el('b', {}, itemName(r.item)), ` (${t('k_' + r.kind)})`),
+      el('p', { style: 'text-align:center' }, el('button', { class: 'btn', onclick: () => equip(r.kind, r.item) }, t('equip'))));
+  } catch (e) { clearInterval(spin); $('#gReveal').replaceChildren(el('div', { class: 'feedback bad' }, e.message)); }
+  finally { S.spinning = false; applyLook(); renderShop(); renderProfile(); renderAnalytics(); }
+};
+
+/* ---------- PERFIL ---------- */
+function renderProfile() {
+  const s = S.shop; if (!s) return;
+  const eq = s.equipped || {};
+  const acc = s.attempts ? Math.round(100 * s.correct / s.attempts) + '%' : '–';
+  $('#profileTop').replaceChildren(avatarNode(true), el('div', {},
+    el('div', { class: 'muted' }, t('student')), el('h2', { style: 'margin:0' }, s.username),
+    eq.title ? el('span', { class: 'title-tag' }, itemName(eq.title)) : null));
+  $('#profileStats').replaceChildren(
+    el('div', { class: 'stat' }, t('attempts'), el('b', {}, String(s.attempts))),
+    el('div', { class: 'stat' }, t('accuracy'), el('b', {}, acc)),
+    el('div', { class: 'stat' }, t('testNow'), el('b', {}, String(s.current_level))),
+    el('div', { class: 'stat' }, t('coinsL'), el('b', {}, '🪙 ' + s.coins)),
+    el('div', { class: 'stat' }, t('owned'), el('b', {}, `${s.owned.length}/${s.items.length}`)));
+  $('#profileSlots').replaceChildren(el('p', { class: 'muted' }, t('profileHint')), ...['avatar', 'theme', 'frame', 'title'].map(kind => {
+    const mine = s.items.filter(i => i.kind === kind && i.owned);
+    const label = it => kind === 'avatar' ? `${AVATAR_EMOJI[it.id] || ''} ${itemName(it.id)}` : `${KIND_ICON[kind]} ${itemName(it.id)}`;
+    return el('div', { class: 'slot' }, el('b', {}, KIND_ICON[kind] + ' ' + t('k_' + kind)), el('div', { class: 'choices' },
+      el('button', { class: 'choice', 'aria-pressed': String(!eq[kind]), onclick: () => equip(kind, null) }, t('none')),
+      mine.map(it => el('button', { class: 'choice', 'aria-pressed': String(eq[kind] === it.id), onclick: () => equip(kind, it.id) }, label(it)))));
+  }));
 }
 function renderAnalytics() {
   const p = S.progress, box = $('#analytics'); if (!p) return;
@@ -671,28 +877,7 @@ function renderAnalytics() {
         el('div', { class: 'track' }, el('div', { class: 'fill', style: `width:${n / max * 100}%` })), el('b', {}, String(n)));
     })) : el('p', { class: 'muted' }, t('noErrors')));
 }
-function renderGacha() {
-  const p = S.progress; if (!p) return;
-  $('#gGrid').replaceChildren(...p.all_avatars.map(id => {
-    const have = p.avatars.includes(id);
-    return el('button', {
-      class: 'av' + (have ? '' : ' locked') + (S.avatar === id ? ' sel' : ''), disabled: !have, 'aria-label': id,
-      onclick: () => { S.avatar = id; store.set('avatar', id); refreshProgress(); },
-    }, have ? AVATAR_EMOJI[id] || '🎭' : '❓');
-  }));
-  $('#gInfo').textContent = `${t('gInfo')} ${t('gPulls')}: ${p.pulls} · 🪙 ${p.coins}`;
-  $('#gPull').disabled = p.pulls <= 0 || p.avatars.length >= p.all_avatars.length;
-}
-$('#coinsBtn').onclick = () => { $('#gReveal').replaceChildren(); renderGacha(); $('#gacha').showModal(); };
-$('#gClose').onclick = () => $('#gacha').close();
-$('#gPull').onclick = async () => {
-  try {
-    const r = await api('/api/gacha', {});
-    S.avatar = r.avatar; store.set('avatar', r.avatar);
-    $('#gReveal').replaceChildren(el('div', { class: 'reveal', role: 'img', 'aria-label': r.avatar }, AVATAR_EMOJI[r.avatar] || '🎭'), el('p', { style: 'text-align:center' }, t('gWon')));
-    refreshProgress();
-  } catch (e) { $('#gReveal').replaceChildren(el('div', { class: 'feedback bad' }, e.message)); }
-};
+$('#coinsBtn').onclick = () => switchTab('shop');
 
 /* ---------- Pomodoro (modo TDAH) ---------- */
 const pomo = { running: false, left: 25 * 60, timer: null };
@@ -701,23 +886,28 @@ function pomoDraw() {
   $('#pomoTime').textContent = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
   $('#pomoStart').textContent = pomo.running ? t('pause') : t('start');
 }
-function pomoEvent(payload) { api('/api/event', { event: 'pomodoro', payload }).catch(() => {}); }
+// La matriz LED lleva su propia cuenta atrás: le decimos los segundos que quedan y el total.
+function pomoEvent(action) {
+  const total = Number($('#pomoMin').value) * 60;
+  api('/api/event', { event: 'pomodoro', payload: { action, seconds: Math.max(0, pomo.left), total } }).catch(() => {});
+}
 function pomoReset() {
   clearInterval(pomo.timer); pomo.running = false; pomo.left = Number($('#pomoMin').value) * 60; $('#pomoMsg').textContent = ''; pomoDraw();
+  pomoEvent('reset');
 }
 $('#pomoMin').onchange = pomoReset;
 $('#pomoReset').onclick = pomoReset;
 $('#pomoStart').onclick = () => {
-  if (pomo.running) { clearInterval(pomo.timer); pomo.running = false; pomoDraw(); return; }
+  if (pomo.running) { clearInterval(pomo.timer); pomo.running = false; pomoDraw(); pomoEvent('pause'); return; }
   if (pomo.left <= 0) pomoReset();
   pomo.running = true; $('#pomoMsg').textContent = t('pomoGo');
-  pomoEvent({ action: 'start', minutes: Number($('#pomoMin').value) });
+  pomoEvent('start');
   pomo.timer = setInterval(() => {
     pomo.left--; pomoDraw();
     if (pomo.left <= 0) {
       clearInterval(pomo.timer); pomo.running = false; $('#pomoMsg').textContent = t('pomoDone');
       $('#pomodoro').classList.add('ring'); setTimeout(() => $('#pomodoro').classList.remove('ring'), 2500);
-      pomoEvent({ action: 'end' }); pomoDraw();
+      pomoEvent('end'); pomoDraw();
     }
   }, 1000);
   pomoDraw();
@@ -727,9 +917,9 @@ $('#pomoStart').onclick = () => {
 function switchTab(tab) {
   S.tab = tab;
   document.querySelectorAll('[role=tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
-  ['learn', 'practice', 'test'].forEach(id => { $('#' + id).hidden = id !== tab; });
+  ['learn', 'practice', 'test', 'shop', 'profile'].forEach(id => { $('#' + id).hidden = id !== tab; });
   if (tab === 'learn') renderLearn();
-  if (tab === 'test') refreshProgress();
+  if (tab === 'test' || tab === 'shop' || tab === 'profile') refreshProgress();
 }
 document.querySelectorAll('[role=tab]').forEach(b => { b.onclick = () => switchTab(b.dataset.tab); });
 
@@ -746,10 +936,13 @@ for (const k of ['tdah', 'dys', 'calc']) {
 $('#level').onchange = e => { S.level = Number(e.target.value); store.set('level', S.level); if (S.tab === 'practice') loadPractice(true); };
 $('#lang').onchange = async e => {
   S.lang = e.target.value; store.set('lang', S.lang);
-  await loadTheory(); applyStatic(); renderLearn(); renderAnalytics();
+  await loadTheory(); applyStatic(); renderLearn(); renderAnalytics(); renderShop(); renderProfile();
   if (S.tab === 'practice' && S.problem) loadPractice(true, true);
-  if (S.test.problem && !$('#testRun').hidden) {
-    try { S.test.problem = await api('/api/problem?' + qs({ id: S.test.problem.id, language: S.lang, mode: 'test' })); renderTest(); } catch { /* se queda como estaba */ }
+  if (S.test.problem && !$('#testRun').hidden && !S.test.answered) {
+    try {
+      S.test.problem = await api('/api/problem?' + qs({ id: S.test.problem.id, language: S.lang, mode: 'test', session: S.test.session }));
+      renderTest();
+    } catch { /* se queda como estaba */ }
   }
 };
 document.addEventListener('keydown', e => {

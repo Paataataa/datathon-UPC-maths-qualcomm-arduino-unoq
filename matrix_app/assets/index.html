@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>studIA matrix</title>
+<style>body { font: 16px/1.5 system-ui, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; }</style>
+</head>
+<body>
+<h1>studIA matrix</h1>
+<p>La matriz LED está lista. La controla <code>studia_server.py</code> (puerto 8001).</p>
+<pre id="state">…</pre>
+<script>
+setInterval(async () => {
+  try { document.querySelector('#state').textContent = JSON.stringify(await (await fetch('/state')).json(), null, 2); }
+  catch { /* la app se está reiniciando */ }
+}, 1000);
+</script>
+</body>
+</html>
