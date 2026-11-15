@@ -1,0 +1,16 @@
+[Unit]
+Description=studIA: the tutor web app (port 8001)
+After=math-llm.service math-embed.service
+Wants=math-llm.service math-embed.service
+
+[Service]
+Type=simple
+User=arduino
+WorkingDirectory=/home/arduino/datathon-UPC-maths-qualcomm-arduino-unoq
+ExecStart=/usr/bin/python3 /home/arduino/datathon-UPC-maths-qualcomm-arduino-unoq/studia_server.py --host 127.0.0.1 --port 8001
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
