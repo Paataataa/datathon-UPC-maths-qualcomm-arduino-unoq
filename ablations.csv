@@ -1,0 +1,4 @@
+time,name,commit,input,languages,n,rag_k,accuracy,mean_s,worst_s,over_limit
+20261114-181054,test-reason,6139dad,data/val.jsonl,all,5,0,0.0,6.1,6.7,0
+20261114-223117,demo-actual,9b9fa7e,data/demo/train.jsonl,all,100,0,22.0,7.6,11.9,0
+20261115-081336,demo,d5787b9,data/demo/train.jsonl,all,100,0,23.0,7.6,11.8,0
