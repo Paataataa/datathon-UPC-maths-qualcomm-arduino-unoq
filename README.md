@@ -4,9 +4,11 @@ studIA is a Kangaroo-math tutor that runs entirely on an Arduino UNO Q 4 GB, wit
 
 The same board also answers the organizers' exam with `predict.py`: one letter, A to E, per problem, in at most 60 seconds.
 
-Built for the Datathon FME 2026, Qualcomm challenge "Math on the Edge". The challenge's own setup guide, steps 0 to 15, is kept in [DATATHON.md](DATATHON.md).
+Built for the Datathon FME 2026, Qualcomm challenge "Math on the Edge". The challenge's own setup guide, steps 0 to 15, is kept in [DATATHON.md](DATATHON.md). Our pitch is in [docs/studIA-presentation.pdf](docs/studIA-presentation.pdf).
 
-> **TODO before publishing:** add a photo of the board with the LED matrix on, and a link to a short video of the demo working with Wi-Fi off.
+<p align="center">
+  <img src="docs/images/studia-board.jpg" width="520" alt="The Arduino UNO Q running studIA, with the student's avatar on the LED matrix">
+</p>
 
 ---
 
@@ -87,7 +89,7 @@ flowchart LR
 
 ### How the tutor stays fast and safe
 
-The board reads about 11 tokens per second and writes about 6, so one tutor answer costs 12 to 19 seconds. studIA designs around that:
+The board reads about 11 tokens per second and writes about 6, so one tutor answer costs 16 to 23 seconds on average, and up to 28. studIA designs around that:
 
 - **Only one place uses the model:** the hint and the wrong-option explanations. Everything else, from the similar problem to the theory, the test path and the LED, is code, SQLite and embeddings, and answers in a fraction of a second.
 - **Precompute while the student reads.** As soon as a problem is on screen, a background queue writes its hint and the explanation of every wrong option, so they are often ready before the student asks.
@@ -227,19 +229,22 @@ All runs on the board, from [docs/results/ablations.csv](docs/results/ablations.
 
 ### The tutor (teaching)
 
-From [docs/results/teach_metrics.csv](docs/results/teach_metrics.csv): `eval_teach.py` on 5 validation problems, 15 model texts (a hint, a reply to a doubt, and a wrong-option explanation for each), commit `6139dad`. **Five problems is a small sample**: the intervals are wide.
+From [docs/results/teach_metrics.csv](docs/results/teach_metrics.csv): `eval_teach.py` on 15 validation problems with options, 45 model texts (a hint, a reply to a doubt, and a wrong-option explanation for each), commit `6cb08f5`. **15 problems is a small sample**: the intervals are wide.
 
 | Metric | Result |
 | --- | --- |
-| Model texts that leaked the answer before the guardrail | 3/15 (20%, 95% interval 7–45%), all three in replies to a doubt |
-| Leaks the guardrail blocked | 3/3 |
-| Strict upper bound after the guardrail (any mention of the correct value or letter) | 2/15 (13%) |
+| Model texts that leaked the answer before the guardrail | 4/45 (8.9%, 95% interval 3.5–20.7%) |
+| ... in hints / replies to a doubt / wrong-option explanations | 0/15 / 0/15 / 4/15 (26.7%) |
+| Leaks the guardrail blocked | 4/4 |
+| Texts shown to the student that mention the correct value or letter, strict check with no context rules | 0/45 (95% interval 0–7.9%) |
 | Attempts to get the answer out, in Catalan, Spanish and English | 12/12 refused |
 | Harmless doubts refused by mistake | 0/10 |
-| Hint latency, mean (worst) | 12.2 s (13.1 s) |
-| Reply to a doubt, mean | 14.7 s |
-| Explanation of a wrong option, mean | 17.4 s |
-| Hint latency with a prompt-cache prewarm against without | 12.2 s against 12.9 s: no gain |
+| Hint, mean (worst) | 16.0 s (21.9 s) |
+| Reply to a doubt, mean (worst) | 19.8 s (27.2 s) |
+| Explanation of a wrong option, mean (worst) | 22.9 s (27.5 s) |
+| Hint with a prompt-cache prewarm against without | 16.0 s against 16.4 s, 136 tokens read in both: no gain |
+
+The explanation of a wrong option is where the model leaks most: in 4 of 15 explanations of why an option is wrong, it named the correct value. That's why every text goes through the guardrail, and why the precompute queue matters: a 23-second explanation can be ready before the student asks for it.
 
 ---
 
@@ -317,7 +322,7 @@ The common thread: the model answers with one token, so it has no room to calcul
 
 ## What didn't work
 
-- **Reusing the prompt cache for the tutor.** Every tutor call for one problem shares the same start (the system prompt and the problem), so we prewarmed it while the student read. On the board, at the pinned llama.cpp commit with `--ctx-checkpoints 2` (we also tried 8), llama-server reused only the 37 tokens of the system prompt between two different requests. The prewarm saved nothing (12.2 s against 12.9 s). We replaced it with the precompute queue, which writes the answers before they are asked for, and lets the student cut in.
+- **Reusing the prompt cache for the tutor.** Every tutor call for one problem shares the same start (the system prompt and the problem), so we prewarmed it while the student read. On the board, at the pinned llama.cpp commit with `--ctx-checkpoints 2` (we also tried 8), llama-server reused only the 37 tokens of the system prompt between two different requests. The prewarm saved nothing: a hint took 16.0 s with it and 16.4 s without, and read the same 136 tokens. We replaced it with the precompute queue, which writes the answers before they are asked for, and lets the student cut in.
 - **Explaining every wrong option in one call.** Asking the 0.8B model for the four explanations in one structured answer would have read the problem once instead of four times. It didn't follow the format, so we went back to one call per option, in the background queue.
 - **Calibrating the letter bias.** It spread the answers over the five letters, but moved the accuracy only from 22% to 23%, within noise, and over-corrected Catalan towards C.
 - **Cutting replies to a word limit.** Short `max_tokens` cut explanations mid-sentence, with "…". We raised it from 40 to 70 tokens, and trim at the last full sentence instead.
@@ -329,18 +334,19 @@ The common thread: the model answers with one token, so it has no room to calcul
 - **Option-order averaging** (`PASSES=2` or `3` in `config.env`, already implemented): each pass costs one more reading, about 7.6 seconds, and the worst case would still fit in 60 seconds. Not yet measured on the 100 problems.
 - **Compute with Python** what Python can compute: by our classifier, arithmetic and combinatorics are 41 of the 50 practice problems.
 - **Vision for problems with a figure**, with the projector file and `--image-max-tokens 128` (28 to 38 seconds per problem in the organizers' tests).
-- **More teaching measurements:** `eval_teach.py` on 30 or more problems instead of 5, and a simulated student walking the adaptive test.
+- **More teaching measurements:** `eval_teach.py` on 50 or more problems instead of 15, and a simulated student walking the adaptive test.
+- **An online hub**, where students connect with each other, and teachers prepare courses and problems, talk to their students and follow their progress.
 
 ---
 
 ## The team
 
-> **TODO:** add each member's name and role.
-
-- [@Paataataa](https://github.com/Paataataa)
-- [@ghoulson29](https://github.com/ghoulson29)
-- [@NIU1798062](https://github.com/NIU1798062)
-- [@aletorres642](https://github.com/aletorres642)
+| Name | GitHub | Role |
+| --- | --- | --- |
+| Francisco Hernández | [@Paataataa](https://github.com/Paataataa) | Communications and hardware engineer |
+| José Daniel Randazzo | [@ghoulson29](https://github.com/ghoulson29) | Product design and AI engineer |
+| Nicola Randazzo | [@NIU1798062](https://github.com/NIU1798062) | Data and LED UI engineer |
+| Alejandro Torres | [@aletorres642](https://github.com/aletorres642) | Data and telecom engineer |
 
 ## Data, credits and licenses
 
