@@ -6,6 +6,8 @@ The same board also answers the organizers' exam with `predict.py`: one letter, 
 
 Built for the Datathon FME 2026, Qualcomm challenge "Math on the Edge". The challenge's own setup guide, steps 0 to 15, is kept in [DATATHON.md](DATATHON.md). Our pitch is in [docs/studIA-presentation.pdf](docs/studIA-presentation.pdf).
 
+The step-by-step write-up is on Arduino Project Hub as **"studIA - Math Learning Local Copilot"**. It's still in review there, so it has no public link yet. Until it's published, the same text is in [docs/project-hub.md](docs/project-hub.md).
+
 <p align="center">
   <img src="docs/images/studia-board.jpg" width="520" alt="The Arduino UNO Q running studIA, with the student's avatar on the LED matrix">
 </p>
